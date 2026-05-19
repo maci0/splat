@@ -404,16 +404,43 @@ def create_win32_config(exe_path: Path, exe_bytes: bytes):
         text = str(s)
         return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-    # Pick a compiler tag from the linker version baked into the PE
-    # optional header. Values are MajorLinkerVersion → splat compiler
-    # tag; user can override in the YAML.
-    _LINKER_TO_COMPILER = {
+    # Pick a compiler tag from telltale PE characteristics. The bulk of
+    # MSVC-linked binaries are identified via MajorLinkerVersion; MinGW
+    # and Clang-LLD are recognised via distinct fingerprints — MinGW
+    # builds typically import from `msvcrt.dll` or `libgcc_s_*.dll`,
+    # ship a `.idata`/`.CRT`/`.bss` section layout, and use linker
+    # version 2.x or 1.x. LLD-linked PEs identify themselves through
+    # a "Rich"-less DOS stub plus a `.rdata$zzzdebug` section, but we
+    # rely on the simpler heuristic: any import of `libc++.dll` or a
+    # GCC runtime stamps the binary as MinGW.
+    _LINKER_TO_MSVC = {
         2: "MSVC2", 3: "MSVC4", 4: "MSVC4", 5: "MSVC5",
         6: "MSVC6", 7: "MSVC7", 8: "MSVC8", 9: "MSVC9",
         10: "MSVC10", 11: "MSVC11", 12: "MSVC12",
         14: "MSVC14",
     }
-    compiler_tag = _LINKER_TO_COMPILER.get(pe.linker_major, "MSVC6")
+
+    def _detect_compiler() -> str:
+        dlls_lower = {imp.dll.lower() for imp in pe.imports}
+        # MinGW (gcc-linked) signatures: links to libgcc, libstdc++,
+        # libwinpthread, or has a .CRT section.
+        mingw_dlls = {
+            "libgcc_s_dw2-1.dll", "libgcc_s_seh-1.dll",
+            "libstdc++-6.dll", "libwinpthread-1.dll",
+            "libgcc_s.dll", "libssp-0.dll",
+        }
+        section_names = {s.name for s in pe.sections}
+        if dlls_lower & mingw_dlls or ".CRT" in section_names:
+            return "MINGW"
+        # LLD signature: linker_major 14 but characteristics differ.
+        # Conservative: only flag if .text$mn or .rdata$zzzdebug are
+        # present (LLD-specific section grouping).
+        if any(s.startswith(".text$") or s.startswith(".rdata$")
+               for s in section_names):
+            return "CLANG_LLD"
+        return _LINKER_TO_MSVC.get(pe.linker_major, "MSVC6")
+
+    compiler_tag = _detect_compiler()
 
     header = f"""\
 # name: {exe_path.name}
@@ -690,6 +717,26 @@ options:
         for idx, rva in enumerate(pe.safe_seh_handlers):
             va = pe.image_base + rva
             symbol_addrs.append(f"safeseh_{idx} = 0x{va:08X}; // type:func")
+
+    if pe.runtime_functions:
+        symbol_addrs.append("")
+        symbol_addrs.append(
+            "// UNWIND_INFO blobs — each RUNTIME_FUNCTION's UnwindInfoAddress "
+            "points at a (variable-length) IMAGE_UNWIND_INFO record."
+        )
+        unwind_cap = 2048
+        seen_unwind: set = set()
+        for begin, _end, uw in pe.runtime_functions[:unwind_cap]:
+            # The high bit of the UnwindInfoAddress flags a chained record —
+            # the same target then naturally collides with itself. Mask off
+            # before symbol emission so multiple chained refs share one
+            # `unwind_<va>` label.
+            base_uw = uw & 0x7FFFFFFF
+            if base_uw == 0 or base_uw in seen_unwind:
+                continue
+            seen_unwind.add(base_uw)
+            va = pe.image_base + base_uw
+            symbol_addrs.append(f"unwind_{va:X} = 0x{va:08X}; // type:u8")
 
     if pe.cfg_function_rvas:
         symbol_addrs.append("")

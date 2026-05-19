@@ -93,14 +93,32 @@ class Win32SegPdata(CommonSegment):
                         )
                     i = n
                     break
-                # Unwind RVA emitted as a raw 32-bit value: the high
-                # bit set means "chained record" (UNWIND_INFO is itself
-                # a UNWIND_HISTORY pointing at the next handler in the
-                # chain) — round-trips byte-for-byte either way.
+                # Unwind RVA emitted as `unwind_<va> - ImageBase` when a
+                # matching symbol is registered in symbol_addrs.txt — let
+                # the analyst rename it; falls back to raw hex when no
+                # such symbol exists (degenerate inputs or chained
+                # records masked off in create_config).
+                base_uw = unwind & 0x7FFFFFFF
+                unwind_label = None
+                if base_uw:
+                    candidate = symbols_mod.all_symbols_dict.get(
+                        pe.image_base + base_uw
+                    )
+                    if candidate:
+                        unwind_label = candidate[0].name
+                if unwind_label is not None:
+                    # Preserve the chained-record bit by ORing it in
+                    # after the symbolic subtraction.
+                    uw_expr = (
+                        f"({unwind_label} - 0x{pe.image_base:X})"
+                        + (f" | 0x80000000" if unwind & 0x80000000 else "")
+                    )
+                else:
+                    uw_expr = f"0x{unwind:X}"
                 f.write(
                     f"    .long {resolve_func_rva(begin)} - 0x{pe.image_base:X}"
                     f", {resolve_func_rva(end)} - 0x{pe.image_base:X}"
-                    f", 0x{unwind:X}"
+                    f", {uw_expr}"
                     f"  /* [{entry_index}] RUNTIME_FUNCTION */\n"
                 )
                 i += 12

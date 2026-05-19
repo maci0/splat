@@ -3145,6 +3145,110 @@ class CreateConfigSecurityCookieTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class CreateConfigUnwindSymbolsTest(unittest.TestCase):
+    def test_runtime_function_unwind_rvas_emit_symbols(self):
+        """Each PE32+ RUNTIME_FUNCTION entry's UnwindInfoAddress should
+        produce an `unwind_<va>` symbol in symbol_addrs.txt so the
+        pdata `.long` rows can reference unwind info by label."""
+        # Build a PE32+ binary with .pdata containing 2 RUNTIME_FUNCTION
+        # entries: (1000, 100D, 4000) and (1100, 110D, 4020).
+        text_body = b"\x90" * FILE_ALIGN
+        # .pdata layout (PE32+): 12 bytes per record + 12-byte null terminator
+        pdata_body = struct.pack(
+            "<IIIIIIIII",
+            0x1000, 0x100D, 0x4000,
+            0x1100, 0x110D, 0x4020,
+            0, 0, 0,
+        )
+        pdata_body = pdata_body.ljust(FILE_ALIGN, b"\x00")
+
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {"name": b".text", "vsize": 0x200, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": text_body},
+                {"name": b".pdata", "vsize": 0x100, "vaddr": 0x3000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
+                 "chars": 0x40000040, "body": pdata_body},
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0),
+                (0x3000, 24),  # Exception Table → .pdata
+            ],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-unwind-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "uw.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            txt = (tmpdir / "symbol_addrs.txt").read_text()
+            # Unwind RVAs 0x4000 / 0x4020 → VAs 0x140004000 / 0x140004020.
+            self.assertIn("unwind_140004000 = 0x", txt)
+            self.assertIn("unwind_140004020 = 0x", txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class CreateConfigMingwClangDetectionTest(unittest.TestCase):
+    def test_mingw_imports_trigger_mingw_compiler_tag(self):
+        """A PE importing libgcc_s / libstdc++ / libwinpthread is GCC-
+        linked MinGW. Generated YAML should say `compiler: MINGW`."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        body = bytearray(0x100)
+        ilt_rva = rdata_rva + 0x50
+        iat_rva = rdata_rva + 0x60
+        dll_rva = rdata_rva + 0x30
+        hn_rva = rdata_rva + 0x70
+        struct.pack_into("<IIIII", body, 0x00, ilt_rva, 0, 0, dll_rva, iat_rva)
+        struct.pack_into("<IIIII", body, 0x14, 0, 0, 0, 0, 0)
+        body[0x30 : 0x30 + 23] = b"libgcc_s_dw2-1.dll\x00\x00\x00\x00\x00"
+        struct.pack_into("<II", body, 0x50, hn_rva, 0)
+        struct.pack_into("<II", body, 0x60, hn_rva, 0)
+        body[0x70 : 0x70 + 14] = b"\x00\x00__main\x00\x00\x00\x00\x00\x00"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x20},
+                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(0, 0), (rdata_rva, 0x100)],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-mingw-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "mingw.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            yaml_txt = (tmpdir / "mingw.exe.yaml").read_text()
+            self.assertIn("compiler: MINGW", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigCfgSymbolsTest(unittest.TestCase):
     def test_cfg_function_rvas_emit_cfg_target_rows(self):
         """A /guard:cf-enabled PE lists every valid indirect-call target

@@ -87,6 +87,13 @@ def _msvc_compiler(name: str) -> Compiler:
     )
 
 
+# GCC-Mingw and Clang-LLD both produce PE binaries that follow the
+# same MASM-style assembly conventions as MSVC for splat-emit purposes,
+# but get distinct compiler tags so generated configs document the
+# actual toolchain that built the binary.
+MINGW = _msvc_compiler("MINGW")
+CLANG_LLD = _msvc_compiler("CLANG_LLD")
+
 MSVC2 = _msvc_compiler("MSVC2")
 MSVC4 = _msvc_compiler("MSVC4")
 MSVC5 = _msvc_compiler("MSVC5")
@@ -110,6 +117,8 @@ compiler_for_name: Dict[str, Compiler] = {
         PSYQ,
         MWCCPS2,
         EEGCC,
+        MINGW,
+        CLANG_LLD,
         MSVC2,
         MSVC4,
         MSVC5,
