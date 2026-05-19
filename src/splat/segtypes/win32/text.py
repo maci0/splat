@@ -315,6 +315,7 @@ class Win32SegText(CommonSegment):
         thunk_labels: Dict[int, str] = {}
         if iat_to_label:
             used: Dict[str, int] = {}
+            rip_reg = capstone.x86.X86_REG_RIP if pe.is_pe32_plus else 0
             for target in sorted(call_targets):
                 off = target - vram
                 if off < 0 or off >= decode_len:
@@ -326,13 +327,20 @@ class Win32SegText(CommonSegment):
                     op0 = insn.operands[0]
                     if op0.type != capstone.CS_OP_MEM:
                         break
-                    if (
-                        op0.mem.base != 0
-                        or op0.mem.index != 0
-                        or op0.mem.segment != 0
-                    ):
+                    if op0.mem.index != 0 or op0.mem.segment != 0:
                         break
-                    iat_label = iat_to_label.get(op0.mem.disp & _addr_mask)
+                    if pe.is_pe32_plus:
+                        # PE32+ thunk: `jmp qword ptr [rip + disp]`.
+                        # IAT slot VA = next_ip + disp.
+                        if op0.mem.base != rip_reg:
+                            break
+                        slot_va = (insn.address + insn.size + op0.mem.disp) & _addr_mask
+                    else:
+                        # PE32 thunk: `jmp dword ptr [imm32]`. No base.
+                        if op0.mem.base != 0:
+                            break
+                        slot_va = op0.mem.disp & _addr_mask
+                    iat_label = iat_to_label.get(slot_va)
                     if iat_label is None:
                         break
                     base = f"{iat_label}_thunk"
