@@ -2105,6 +2105,28 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.init(blob)
 
+    def test_unknown_optional_header_magic(self):
+        """Optional header magic must be 0x10B (PE32) or 0x20B (PE32+).
+        Older formats like ROM image (0x107) or future values must be
+        rejected before we try to read PE32-specific offsets."""
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 1, 0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        # Build a valid-looking PE32 optional header then overwrite the
+        # magic to 0x107 (ROM image, unsupported).
+        opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
+        struct.pack_into("<H", opt, 0, 0x0107)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec
+        with self.assertRaises(SystemExit):
+            win32_platform.parse_pe(
+                bytes(header).ljust(FILE_ALIGN * 2, b"\x00")
+            )
+
     def test_truncated_after_pe_signature(self):
         """File large enough to hold MZ + e_lfanew + 'PE\\0\\0' but not
         the trailing 20-byte COFF file header must be rejected before
