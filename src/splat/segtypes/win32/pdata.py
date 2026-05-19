@@ -148,8 +148,15 @@ class Win32SegPdata(CommonSegment):
                     prolog_ops = ", ".join(
                         f"{op}({info})" for _ofs, op, info in unwind_decoded.codes
                     )
+                    extra = ""
+                    if unwind_decoded.frame_register:
+                        extra = (
+                            f" fp=r{unwind_decoded.frame_register}"
+                            f"+0x{unwind_decoded.frame_register_offset:X}"
+                        )
                     unwind_comment = (
-                        f" prolog=0x{unwind_decoded.prolog_size:X} [{prolog_ops}]"
+                        f" prolog=0x{unwind_decoded.prolog_size:X}{extra}"
+                        f" [{prolog_ops}]"
                     )
                 if exact:
                     # Byte-identical mode: emit raw RVAs so the
