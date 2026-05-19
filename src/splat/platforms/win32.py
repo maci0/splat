@@ -419,14 +419,30 @@ def compute_export_labels(
 def parse_pe(data: bytes) -> PEInfo:
     """Parse `data` as a Win32 PE32 or PE32+ image and return a populated
     `PEInfo`. Walks the DOS stub, COFF file header, optional header, and
-    every populated data directory (exports, imports, resources,
-    exception table, base relocations, debug info, TLS, load config,
-    bound imports, delay imports). Logs a fatal error and exits on
-    structural malformations: missing MZ/PE magics, mismatched
-    machine/magic combinations, optional header below the per-format
-    minimum size, or sections that run past EOF. Every iteration loop
-    has a defensive cap so a fuzzed PE can't make the parser scan past
-    realistic bounds. Safe to call on hand-crafted byte buffers."""
+    every populated data directory:
+
+      0  Export Table          → `exports`, `export_dll_name`
+      1  Import Table          → `imports` (+ IAT slot RVAs)
+      2  Resource Table        → `resources`, `version_info`
+      3  Exception Table       → `runtime_functions` + `unwind_info`
+      5  Base Relocation Table → `pointer_rvas`
+      6  Debug                 → `pdb_path`, `pdb_guid`, `pdb_age`
+      9  TLS Table             → `tls_callback_vas`
+      10 Load Config           → `security_cookie_va`, `safe_seh_handlers`,
+                                 `cfg_function_rvas`, `cfg_flags`
+      11 Bound Import          → `bound_imports`
+      13 Delay Import          → `delay_imports`
+      14 CLR Runtime Header    → `clr_header` (.NET assemblies)
+
+    Plus the deprecated COFF symbol table when the optional header
+    points at one (`coff_symbols`).
+
+    Logs a fatal error and exits on structural malformations: missing
+    MZ/PE magics, mismatched machine/magic combinations, optional
+    header below the per-format minimum size, or sections that run
+    past EOF. Every iteration loop has a defensive cap so a fuzzed PE
+    can't make the parser scan past realistic bounds. Safe to call on
+    hand-crafted byte buffers."""
     if len(data) < 0x40 or data[:2] != DOS_MAGIC:
         log.error("win32 target does not start with an MZ DOS header")
 
