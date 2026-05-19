@@ -613,8 +613,9 @@ class Win32SegText(CommonSegment):
             # are typically MSVC switch jump-tables or function-pointer
             # tables that live inside `.text` itself; we must emit them as
             # `.long <label>` rather than disassembling them as code.
-            ptr_size = 8 if pe.is_pe32_plus else 4
-            ptr_fmt = "<Q" if pe.is_pe32_plus else "<I"
+            ptr_size, ptr_fmt, ptr_directive, _ = win32_platform.ptr_layout(
+                pe.is_pe32_plus
+            )
             seg_start_rva = vram - pe.image_base
             seg_end_rva = seg_start_rva + decode_len
             embedded_ptr_offsets: Set[int] = set()
@@ -644,14 +645,13 @@ class Win32SegText(CommonSegment):
                     ptr_label: Optional[str] = (
                         None if exact else (resolve_sym(tgt) if tgt else None)
                     )
-                    directive = ".quad" if ptr_size == 8 else ".long"
                     if ptr_label is not None:
                         f.write(
-                            f"    {directive} {ptr_label}  /* 0x{here_va:08X} = 0x{tgt:X} */\n"
+                            f"    {ptr_directive} {ptr_label}  /* 0x{here_va:08X} = 0x{tgt:X} */\n"
                         )
                     else:
                         f.write(
-                            f"    {directive} 0x{tgt:X}  /* 0x{here_va:08X} */\n"
+                            f"    {ptr_directive} 0x{tgt:X}  /* 0x{here_va:08X} */\n"
                         )
                     offset += ptr_size
                     continue

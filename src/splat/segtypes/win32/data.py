@@ -15,13 +15,10 @@ STRING_MIN_LEN = 4
 
 
 def _ptr_layout(is_pe32_plus: bool):
-    """Per-bitness pointer-slot constants for the data segment:
-    (size_bytes, struct_fmt, asm_directive, hex_print_width).
-    PE32 uses 4-byte slots emitted as `.long 0xXXXXXXXX`; PE32+
-    uses 8-byte slots emitted as `.quad 0xXXXXXXXXXXXXXXXX`."""
-    if is_pe32_plus:
-        return 8, "<Q", ".quad", 16
-    return 4, "<I", ".long", 8
+    """Thin wrapper around `win32.ptr_layout` so call sites in this
+    module don't need to import the platform helper directly."""
+    from ...platforms.win32 import ptr_layout
+    return ptr_layout(is_pe32_plus)
 
 
 def _is_string_byte(b: int) -> bool:

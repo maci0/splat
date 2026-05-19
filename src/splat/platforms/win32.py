@@ -612,6 +612,17 @@ def parse_exports(data: bytes, pe: PEInfo) -> None:
         )
 
 
+def ptr_layout(is_pe32_plus: bool) -> "Tuple[int, str, str, int]":
+    """Per-bitness pointer-slot constants used by data + text segments:
+    (size_bytes, struct_fmt, asm_directive, hex_print_width).
+
+    PE32 uses 4-byte slots emitted as `.long 0xXXXXXXXX`; PE32+ uses
+    8-byte slots emitted as `.quad 0xXXXXXXXXXXXXXXXX`."""
+    if is_pe32_plus:
+        return 8, "<Q", ".quad", 16
+    return 4, "<I", ".long", 8
+
+
 def _thunk_layout(pe: PEInfo) -> "Tuple[int, int, str]":
     """Per-bitness thunk-array constants: (size_bytes, ordinal_flag, struct_fmt).
     PE32 thunks are 32-bit DWORDs with the ordinal flag at bit 31;
