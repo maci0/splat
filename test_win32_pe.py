@@ -1629,6 +1629,40 @@ class WideStringDetectionTest(unittest.TestCase):
         self.assertIsNone(_scan_wide_string(blob, 0))
 
 
+class Win32SegtypeAliasTest(unittest.TestCase):
+    def test_asm_resolves_to_text(self):
+        """`type: asm` in YAML must resolve to Win32SegAsm which inherits
+        from Win32SegText — same behaviour as `type: text`, matching the
+        conventional segtype name used by the other splat platforms."""
+        from src.splat.segtypes.win32.asm import Win32SegAsm
+        from src.splat.segtypes.win32.text import Win32SegText
+
+        self.assertTrue(issubclass(Win32SegAsm, Win32SegText))
+        # No fields overridden — pure alias.
+        self.assertEqual(Win32SegAsm.__bases__, (Win32SegText,))
+
+
+class Win32SegHeaderUtilsTest(unittest.TestCase):
+    """Targeted tests for the small helpers in header.py — these wrap
+    `_decode_flags` and the Subsystem table."""
+
+    def test_decode_characteristics_flags(self):
+        from src.splat.segtypes.win32.header import (
+            _decode_flags, _FILE_CHARACTERISTICS, _DLL_CHARACTERISTICS,
+        )
+
+        self.assertEqual(_decode_flags(0, _FILE_CHARACTERISTICS), "(none)")
+        # DLL | EXECUTABLE_IMAGE | 32BIT_MACHINE
+        out = _decode_flags(0x2102, _FILE_CHARACTERISTICS)
+        self.assertIn("EXECUTABLE_IMAGE", out)
+        self.assertIn("32BIT_MACHINE", out)
+        self.assertIn("DLL", out)
+        # DllCharacteristics
+        out = _decode_flags(0x0140, _DLL_CHARACTERISTICS)
+        self.assertIn("DYNAMIC_BASE", out)
+        self.assertIn("NX_COMPAT", out)
+
+
 class PEEdgeCasesTest(unittest.TestCase):
     """Defensive parse tests for malformed inputs and unusual but valid PEs."""
 
