@@ -49,6 +49,11 @@ class Win32SegPdata(CommonSegment):
         data = rom_bytes[self.rom_start : self.rom_end]
 
         def resolve_func_rva(rva: int) -> str:
+            """Map a RUNTIME_FUNCTION RVA (a function start, end, or
+            interior cold-block address) to the matching splat label.
+            Prefers a user-declared symbol_addrs entry; falls back to
+            the `func_<va>` convention text segments emit at every
+            direct call target so cross-segment links resolve."""
             va = pe.image_base + rva
             entries = symbols_mod.all_symbols_dict.get(va)
             if entries:
