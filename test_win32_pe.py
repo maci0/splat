@@ -2315,6 +2315,28 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.parse_pe(blob)
 
+    def test_pe32_plus_amd64_magic_combination_accepted(self):
+        """AMD64 Machine + PE32+ Magic 0x20B must be accepted. Pairs
+        with the mismatch test — confirms the cross-validation only
+        rejects genuine mismatches, not all PE32+ pairings."""
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(pe.machine, 0x8664)
+        self.assertTrue(pe.is_pe32_plus)
+        self.assertEqual(pe.image_base, 0x140000000)
+
     def test_machine_magic_mismatch(self):
         """A PE file with i386 Machine but PE32+ optional header magic
         (or vice-versa) must be rejected — both fields encode pointer
