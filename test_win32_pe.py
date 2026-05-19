@@ -2105,6 +2105,19 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.init(blob)
 
+    def test_truncated_after_pe_signature(self):
+        """File large enough to hold MZ + e_lfanew + 'PE\\0\\0' but not
+        the trailing 20-byte COFF file header must be rejected before
+        struct.unpack_from would walk past EOF."""
+        dos = bytearray(64)
+        dos[0:2] = b"MZ"
+        dos[0x3C:0x40] = struct.pack("<I", 0x40)
+        # 'PE\0\0' present but only ~8 trailing bytes — not enough for the
+        # 20-byte IMAGE_FILE_HEADER that follows.
+        blob = bytes(dos) + b"PE\x00\x00" + b"\x00" * 8
+        with self.assertRaises(SystemExit):
+            win32_platform.parse_pe(blob)
+
     def test_machine_magic_mismatch(self):
         """A PE file with i386 Machine but PE32+ optional header magic
         (or vice-versa) must be rejected — both fields encode pointer
