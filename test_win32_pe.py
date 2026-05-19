@@ -2149,6 +2149,21 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.init(blob)
 
+    def test_zero_optional_header_size(self):
+        """SizeOfOptionalHeader == 0 means there's no optional header
+        at all (technically valid only for COFF object files, not PE
+        images). Parser must reject before attempting to read the
+        2-byte magic field."""
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 0, 0x12345678, 0, 0, 0, 0x010F,
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        with self.assertRaises(SystemExit):
+            win32_platform.parse_pe(bytes(header))
+
     def test_sub_minimum_optional_header_size(self):
         """Optional header smaller than the per-format minimum (96 for
         PE32, 112 for PE32+) can't fit the data-directory offsets we
