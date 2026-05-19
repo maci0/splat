@@ -2175,6 +2175,28 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.parse_pe(b"MZ" + b"\x00" * 10)
 
+    def test_generic_unsupported_machine_rejected(self):
+        """Non-x86 / non-ARM machine codes (MIPS, PowerPC, Alpha, etc.)
+        also hit the win32 init() rejection — generic message rather
+        than the ARM-specific one."""
+        # Machine = 0x0166 (R3000-LE) → not i386/amd64/arm64/arm32.
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x0166, 1, 0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        blob = bytes(header).ljust(FILE_ALIGN * 2, b"\x00")
+        # parse_pe still works (architecture-neutral).
+        pe = win32_platform.parse_pe(blob)
+        self.assertEqual(pe.machine, 0x0166)
+        with self.assertRaises(SystemExit):
+            win32_platform.init(blob)
+
     def test_arm64_machine_rejected_at_init(self):
         """ARM64 PE binaries parse cleanly through parse_pe (structures
         are architecture-neutral) but init() must reject them with an
