@@ -690,6 +690,27 @@ options:
                 trailing += f" ordinal {imp.ordinal}"
             symbol_addrs.append(f"{full} = 0x{slot_va:08X}; {trailing}")
 
+    if pe.clr_header is not None and pe.clr_header.metadata_rva:
+        symbol_addrs.append("")
+        symbol_addrs.append(
+            "// .NET CLR header — points at the assembly's metadata "
+            "(ECMA-335) and entry-point token."
+        )
+        md_va = pe.image_base + pe.clr_header.metadata_rva
+        symbol_addrs.append(
+            f"clr_metadata = 0x{md_va:08X}; // type:u8"
+        )
+        if pe.clr_header.strong_name_signature_rva:
+            sn_va = pe.image_base + pe.clr_header.strong_name_signature_rva
+            symbol_addrs.append(
+                f"clr_strong_name_signature = 0x{sn_va:08X}; // type:u8"
+            )
+        if pe.clr_header.resources_rva:
+            res_va = pe.image_base + pe.clr_header.resources_rva
+            symbol_addrs.append(
+                f"clr_resources = 0x{res_va:08X}; // type:u8"
+            )
+
     if pe.security_cookie_va:
         symbol_addrs.append("")
         symbol_addrs.append(

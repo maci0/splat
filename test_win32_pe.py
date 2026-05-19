@@ -2266,6 +2266,57 @@ class Win32PublicSurfaceTest(unittest.TestCase):
             )
 
 
+class CreateConfigCLRSymbolsTest(unittest.TestCase):
+    def test_dotnet_binary_emits_clr_metadata_symbols(self):
+        """A .NET PE (data dir 14 populated) should emit `clr_metadata`,
+        `clr_strong_name_signature`, `clr_resources` symbols in
+        symbol_addrs.txt so disasm cross-references resolve."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        cor20 = struct.pack(
+            "<IHHIIIIIIII",
+            72, 2, 5,
+            0x2100, 0x400,
+            0x00000001,
+            0x06000001,
+            0x2500, 0x100,
+            0x4000, 0x80,
+        )
+        body = bytearray(cor20 + b"\x00" * (FILE_ALIGN - len(cor20)))
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x10},
+                {"name": b".rdata", "vsize": 0x400, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(0, 0)] * 14 + [(rdata_rva, 72), (0, 0)],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-clr-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "clr.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            txt = (tmpdir / "symbol_addrs.txt").read_text()
+            self.assertIn("clr_metadata = 0x", txt)
+            self.assertIn("clr_strong_name_signature = 0x", txt)
+            self.assertIn("clr_resources = 0x", txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class ParseCLRHeaderTest(unittest.TestCase):
     def test_dotnet_cor20_header_decoded(self):
         """A PE with data dir 14 (CLR Runtime Header) populated has
