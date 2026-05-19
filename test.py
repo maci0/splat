@@ -62,6 +62,50 @@ class Testing(unittest.TestCase):
         for sub_dcmp in dcmp.subdirs.values():
             self.get_right_only_files(sub_dcmp, out)
 
+    def test_win32_create_config_pe32_plus(self):
+        """Run create_win32_config on the synthetic PE32+ fixture and
+        verify it emits an 8-byte ImageBase plus a 64-bit entrypoint VA
+        in symbol_addrs.txt."""
+        from src.splat.scripts.create_config import create_win32_config
+
+        spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False
+
+        fixture_dir = Path("test/win32_app64")
+        gen_spec = importlib.util.spec_from_file_location(
+            "_win32_gen64_cfg", fixture_dir / "generate.py"
+        )
+        gen = importlib.util.module_from_spec(gen_spec)
+        gen_spec.loader.exec_module(gen)
+        gen.main()
+
+        exe_path = fixture_dir / "win32_app64.exe"
+        exe_bytes = exe_path.read_bytes()
+
+        tmp_dir = fixture_dir / "_autogen64"
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir)
+        tmp_dir.mkdir()
+
+        cwd = Path.cwd()
+        try:
+            import os
+
+            os.chdir(tmp_dir)
+            create_win32_config(Path("..") / exe_path.name, exe_bytes)
+        finally:
+            os.chdir(cwd)
+
+        yaml_files = list(tmp_dir.glob("*.yaml"))
+        self.assertTrue(yaml_files, "PE32+ autogen produced no YAML")
+        yaml_text = yaml_files[0].read_text(encoding="utf-8")
+        # 64-bit ImageBase / VA must surface as a 9-hex address.
+        self.assertIn("0x140001000", yaml_text)
+
+        sym_addrs = (tmp_dir / "symbol_addrs.txt").read_text(encoding="utf-8")
+        self.assertIn("entrypoint = 0x140001000", sym_addrs)
+
+        shutil.rmtree(tmp_dir)
+
     def test_win32_create_config(self):
         """Smoke-test the auto-generated win32 splat config."""
         from src.splat.scripts.create_config import create_win32_config
