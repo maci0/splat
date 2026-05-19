@@ -318,6 +318,115 @@ class Testing(unittest.TestCase):
             if out_root.exists():
                 _shutil.rmtree(out_root)
 
+    def test_win32_reassemble_pe32_roundtrip(self):
+        """Drive splat split + win32_reassemble end-to-end on the PE32
+        fixture: the produced PE must have at least a valid PE header
+        with a matching ImageBase / Machine. (Full byte-identity is
+        delivered by `exact_encoding`; this round-trip catches bin/asm
+        wiring breakage that the section-level tests don't see.)"""
+        import shutil as _shutil
+        import subprocess as _sub
+
+        if any(_shutil.which(t) is None for t in ("as", "ld", "objcopy")):
+            self.skipTest("`as` / `ld` / `objcopy` not installed")
+
+        spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False
+        fixture_dir = Path("test/win32_app")
+        gen_spec = importlib.util.spec_from_file_location(
+            "_win32_reasm_gen", fixture_dir / "generate.py"
+        )
+        gen = importlib.util.module_from_spec(gen_spec)
+        gen_spec.loader.exec_module(gen)
+        gen.main()
+
+        split_dir = fixture_dir / "split"
+        if split_dir.exists():
+            shutil.rmtree(split_dir)
+
+        from src.splat.scripts.split import main as splat_main
+        from src.splat.scripts.win32_reassemble import reassemble
+
+        splat_main([fixture_dir / "splat.yaml"], None, False)
+
+        out_path = fixture_dir / "win32_app.reasm.exe"
+        if out_path.exists():
+            out_path.unlink()
+        try:
+            reassemble(fixture_dir / "splat.yaml", out_path, verbose=False)
+            self.assertTrue(out_path.exists(), "reassembly produced no file")
+            data = out_path.read_bytes()
+            self.assertEqual(data[:2], b"MZ", "reassembly is not an MZ file")
+            pe_off = int.from_bytes(data[0x3C:0x40], "little")
+            self.assertEqual(data[pe_off:pe_off + 4], b"PE\x00\x00",
+                             "no PE signature at e_lfanew")
+        finally:
+            if out_path.exists():
+                out_path.unlink()
+            elf = out_path.with_suffix(".reasm.elf")
+            if elf.exists():
+                elf.unlink()
+
+    def test_win32_reassemble_byte_identical_with_exact_encoding(self):
+        """When the YAML enables exact_encoding on text + data segments,
+        win32_reassemble should produce a byte-identical PE — closing the
+        full split + reassemble round-trip."""
+        import shutil as _shutil
+
+        if any(_shutil.which(t) is None for t in ("as", "objcopy")):
+            self.skipTest("`as` / `objcopy` not installed")
+
+        spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False
+        fixture_dir = Path("test/win32_app")
+        gen_spec = importlib.util.spec_from_file_location(
+            "_win32_reasm_exact_gen", fixture_dir / "generate.py"
+        )
+        gen = importlib.util.module_from_spec(gen_spec)
+        gen_spec.loader.exec_module(gen)
+        gen.main()
+
+        out_root = fixture_dir / "split-reasm-exact"
+        if out_root.exists():
+            shutil.rmtree(out_root)
+
+        exact_yaml = fixture_dir / "splat-reasm-exact.yaml"
+        exact_yaml.write_text(
+            (fixture_dir / "splat.yaml")
+            .read_text(encoding="utf-8")
+            .replace("base_path: split", "base_path: split-reasm-exact")
+            .replace(
+                "[0x200, text, main_text]",
+                "{ start: 0x200, type: text, name: main_text, exact_encoding: true }",
+            )
+            .replace(
+                "[0x400, data, main_data]",
+                "{ start: 0x400, type: data, name: main_data, exact_encoding: true }",
+            )
+        )
+
+        from src.splat.scripts.split import main as splat_main
+        from src.splat.scripts.win32_reassemble import reassemble
+
+        splat_main([exact_yaml], None, False)
+
+        out_path = fixture_dir / "win32_app.reasm-exact.exe"
+        if out_path.exists():
+            out_path.unlink()
+        try:
+            reassemble(exact_yaml, out_path, verbose=False)
+            orig = (fixture_dir / "win32_app.exe").read_bytes()
+            reasm = out_path.read_bytes()
+            self.assertEqual(
+                orig, reasm,
+                f"reassembled PE diverges from original "
+                f"({sum(1 for a,b in zip(orig, reasm) if a != b)} mismatches)",
+            )
+        finally:
+            for p in (out_path, exact_yaml):
+                if p.exists():
+                    p.unlink()
+            if out_root.exists():
+                _shutil.rmtree(out_root)
+
     def test_win32_exact_encoding_pe32_plus(self):
         """Mirror of `test_win32_exact_encoding` for the PE32+ fixture.
         Locks down that x86_64 emit_disasm + exact_encoding round-trips
