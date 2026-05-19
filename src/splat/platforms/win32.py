@@ -591,7 +591,7 @@ def parse_imports(data: bytes, pe: PEInfo) -> None:
     DLL name, imported symbol, and the IAT slot RVA so call sites that
     reach the IAT can be tagged with the imported name.
     """
-    if len(pe.data_directories) < 2:
+    if len(pe.data_directories) <= DIR_IMPORT:
         return
     imp_rva, imp_size = pe.data_directories[DIR_IMPORT]
     if imp_rva == 0 or imp_size == 0:
@@ -671,7 +671,7 @@ def parse_delay_imports(data: bytes, pe: PEInfo) -> None:
     Each IMAGE_DELAYLOAD_DESCRIPTOR is 32 bytes; entries are NULL-terminated.
     `Attributes` flag bit 0 indicates RVA-based fields (v2); else they're
     VAs that need ImageBase subtraction (v1, legacy)."""
-    if len(pe.data_directories) < 14:
+    if len(pe.data_directories) <= DIR_DELAY_IMPORT:
         return
     di_rva, di_size = pe.data_directories[DIR_DELAY_IMPORT]
     if di_rva == 0 or di_size == 0:
@@ -761,7 +761,7 @@ def parse_bound_imports(data: bytes, pe: PEInfo) -> None:
     itself (NOT an RVA). Entries are 8-byte IMAGE_BOUND_IMPORT_DESCRIPTOR
     structs terminated by an all-zero entry, optionally followed by
     forwarder-ref descriptors."""
-    if len(pe.data_directories) < 12:
+    if len(pe.data_directories) <= DIR_BOUND_IMPORT:
         return
     bi_rva, bi_size = pe.data_directories[DIR_BOUND_IMPORT]
     if bi_rva == 0 or bi_size == 0:
@@ -806,7 +806,7 @@ def parse_load_config(data: bytes, pe: PEInfo) -> None:
     - SEHandlerTable RVA + count: array of valid SEH handler RVAs the
       MSVC `/SAFESEH` linker switch produced for PE32 binaries.
     """
-    if len(pe.data_directories) < 11:
+    if len(pe.data_directories) <= DIR_LOAD_CONFIG:
         return
     lc_rva, lc_size = pe.data_directories[DIR_LOAD_CONFIG]
     if lc_rva == 0 or lc_size == 0:
@@ -886,7 +886,7 @@ def parse_exception_table(data: bytes, pe: PEInfo) -> None:
     array of RUNTIME_FUNCTION entries (12 bytes each) giving definitive
     function boundaries — useful both for surfacing real function starts
     and for navigating SEH unwind data."""
-    if len(pe.data_directories) < 4:
+    if len(pe.data_directories) <= DIR_EXCEPTION:
         return
     et_rva, et_size = pe.data_directories[DIR_EXCEPTION]
     if et_rva == 0 or et_size == 0:
@@ -918,7 +918,7 @@ def parse_relocations(data: bytes, pe: PEInfo) -> None:
     (HIGHLOW, 32-bit) or 10 (DIR64, 64-bit) mark RVAs of absolute pointers
     that the PE loader needs to rebase. Padding entries (type 0) are
     skipped."""
-    if len(pe.data_directories) < 6:
+    if len(pe.data_directories) <= DIR_BASERELOC:
         return
     rel_rva, rel_size = pe.data_directories[DIR_BASERELOC]
     if rel_rva == 0 or rel_size == 0:
@@ -952,7 +952,7 @@ def parse_debug(data: bytes, pe: PEInfo) -> None:
     """Populate `pe.pdb_path` from data directory 6 (Debug). Walks the
     IMAGE_DEBUG_DIRECTORY array, looking for a CodeView (type 2) entry that
     embeds either an `RSDS`/`NB10` record with a trailing PDB filename."""
-    if len(pe.data_directories) < 7:
+    if len(pe.data_directories) <= DIR_DEBUG:
         return
     dbg_rva, dbg_size = pe.data_directories[DIR_DEBUG]
     if dbg_rva == 0 or dbg_size == 0:
@@ -1005,7 +1005,7 @@ def parse_tls(data: bytes, pe: PEInfo) -> None:
     `IMAGE_TLS_DIRECTORY` for PE32 has AddressOfCallBacks at offset 0x0C
     (PE32+ at 0x18). The pointer dereferences to a NULL-terminated array
     of callback VAs."""
-    if len(pe.data_directories) < 10:
+    if len(pe.data_directories) <= DIR_TLS:
         return
     tls_rva, tls_size = pe.data_directories[DIR_TLS]
     if tls_rva == 0 or tls_size == 0:
@@ -1109,7 +1109,7 @@ def _read_resource_name(data: bytes, name_field: int, root_off: int) -> object:
 def parse_resources(data: bytes, pe: PEInfo) -> None:
     """Walk the .rsrc tree (3 nominal levels: type → name → language) and
     record each leaf in `pe.resources`."""
-    if len(pe.data_directories) < 3:
+    if len(pe.data_directories) <= DIR_RESOURCE:
         return
     rsrc_rva, rsrc_size = pe.data_directories[DIR_RESOURCE]
     if rsrc_rva == 0 or rsrc_size == 0:
