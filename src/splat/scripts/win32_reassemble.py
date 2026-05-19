@@ -132,16 +132,21 @@ def reassemble(yaml_path: Path, out_path: Path, verbose: bool = False) -> Path:
         )
 
     # The splat-generated linker script references object files at
-    # `<build_path>/<source_relpath>.s.o`. Place compiled outputs
-    # there. Each .s file's relative path under asm_path / data_path
-    # is preserved under `<build_path>/asm/` to match splat's
-    # convention (asm_path is the canonical root regardless of
-    # whether the source was under asm_path or data_path).
+    # `<build_path>/<source_relpath><suffix>`. With splat's default
+    # `o_as_suffix: False` the suffix is `.s.o` (`<source>.s.o`); with
+    # `o_as_suffix: True` it's just `.o` (`<source>.o`). Match
+    # whichever the YAML opted into.
+    use_o_as_suffix = bool(opts.get("o_as_suffix", False))
+
     def _obj_for(src: Path) -> Path:
         for root in (asm_path, data_path):
             try:
                 rel = src.relative_to(root)
-                return build_path / "asm" / rel.with_suffix(rel.suffix + ".o")
+                if use_o_as_suffix:
+                    rel = rel.with_suffix(".o")
+                else:
+                    rel = rel.with_suffix(rel.suffix + ".o")
+                return build_path / "asm" / rel
             except ValueError:
                 continue
         return src.with_suffix(src.suffix + ".o")
