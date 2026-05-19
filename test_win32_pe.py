@@ -1659,6 +1659,56 @@ class PEPlusOrdinalImportTest(unittest.TestCase):
         self.assertEqual(pe.imports[0].ordinal, 42)
 
 
+class PEImportIatZeroSkipTest(unittest.TestCase):
+    def test_descriptor_with_zero_iat_is_skipped(self):
+        """An IMAGE_IMPORT_DESCRIPTOR with iat_rva == 0 has no IAT slot
+        VA to attach thunks to. parse_imports must skip such descriptors
+        rather than emit bogus PEImport entries pointing at slot 0."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+
+        ilt_rva = rdata_rva + 0x28
+        dll_name_rva = rdata_rva + 0x40
+
+        body = bytearray(0x60)
+        # Descriptor with iat_rva = 0 (malformed but encountered in
+        # corrupt binaries).
+        struct.pack_into(
+            "<IIIII", body, 0x00,
+            ilt_rva, 0, 0, dll_name_rva, 0,
+        )
+        struct.pack_into("<I", body, 0x28, 0)  # ILT terminator
+        body[0x40 : 0x40 + 11] = b"BadDll.dll\x00"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x60,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[(0, 0), (rdata_rva, 20)],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        # The descriptor is parsed (DLL name known) but no PEImport
+        # entries are recorded since slot VAs would be meaningless.
+        self.assertEqual(pe.imports, [])
+
+
 class PEOrdinalImportTest(unittest.TestCase):
     def test_ordinal_import(self):
         rdata_rva = 0x2000
