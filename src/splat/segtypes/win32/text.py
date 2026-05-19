@@ -46,8 +46,11 @@ _OPERAND_REWRITES = [
 ]
 
 # Capstone uses `riz`/`eiz` to denote an absent index register in SIB
-# expressions. GAS doesn't recognise either — strip them.
-_NO_INDEX_RE = re.compile(r"\s*\+\s*[re]iz\*\d+")
+# expressions. GAS doesn't recognise either — strip them in every
+# position they can appear: `+ riz*N` (middle/tail), `riz*N + ` (head).
+_NO_INDEX_TAIL_RE = re.compile(r"\s*\+\s*[re]iz\*\d+")
+_NO_INDEX_HEAD_RE = re.compile(r"\[[re]iz\*\d+\s*\+\s*")
+_NO_INDEX_LONE_RE = re.compile(r"\[\s*[re]iz\*\d+\s*\]")
 
 # SSE scalar instructions whose source memory operand is 8 bytes but
 # capstone often labels as `xmmword ptr`. GAS wants `qword ptr` (or no
@@ -711,9 +714,12 @@ class Win32SegText(CommonSegment):
                             )
                         for old, new in _OPERAND_REWRITES:
                             rendered_ops = rendered_ops.replace(old, new)
-                        # Strip capstone's `+ riz*N` / `+ eiz*N` "no index"
-                        # placeholder — GAS doesn't recognise either.
-                        rendered_ops = _NO_INDEX_RE.sub("", rendered_ops)
+                        # Strip capstone's `riz`/`eiz` "no index" placeholder
+                        # — GAS doesn't recognise either. Cover all three
+                        # positional forms.
+                        rendered_ops = _NO_INDEX_TAIL_RE.sub("", rendered_ops)
+                        rendered_ops = _NO_INDEX_HEAD_RE.sub("[", rendered_ops)
+                        rendered_ops = _NO_INDEX_LONE_RE.sub("[0]", rendered_ops)
                         # Scalar SSE doubles want `qword ptr`, not capstone's
                         # `xmmword ptr`; scalar singles want `dword ptr`.
                         if raw_mnem in _SCALAR_SSE_DOUBLE:
