@@ -1685,6 +1685,52 @@ class PEEdgeCasesTest(unittest.TestCase):
         self.assertEqual(pe.entry_point_rva, 0)
         # Should not crash later when consumers check entry_point_va.
 
+    def test_sparse_data_directory_count(self):
+        """An optional header can declare NumberOfRvaAndSizes < 16
+        (rare, older MSVC). Parser should walk only the declared count
+        and leave higher-index lookups defensive."""
+        # We construct an optional header by hand with NumberOfRvaAndSizes=2
+        # — only Export + Import slots are real; the parser must not try
+        # to read Resource / Exception / etc.
+        coff_off = 0x40 + 4
+        size_of_opt_hdr = 96 + 16  # standard PE32 fields + 2 data dirs
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 1, 0x12345678, 0, 0, size_of_opt_hdr, 0x010F,
+        )
+        # Standard fields (28) + windows (68) — last field is
+        # NumberOfRvaAndSizes which we set to 2.
+        opt = struct.pack(
+            "<HBBIIIIIIIIIHHHHHHIIIIHHIIIIII",
+            0x010B, 6, 0,
+            0x200, 0x200, 0, 0x1000, 0x1000, 0x2000,
+            0x400000, 0x1000, 0x200,
+            4, 0, 0, 0, 4, 0,
+            0, 0x4000, 0x200, 0,
+            3, 0,
+            0x100000, 0x1000, 0x100000, 0x1000,
+            0, 2,                              # NumberOfRvaAndSizes = 2
+        )
+        # Just two directory entries (Export + Import, both empty).
+        opt += struct.pack("<IIII", 0, 0, 0, 0)
+        assert len(opt) == size_of_opt_hdr, (len(opt), size_of_opt_hdr)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN
+        pe = win32_platform.parse_pe(bytes(buf))
+        # Only 2 data directories populated.
+        self.assertEqual(len(pe.data_directories), 2)
+        # All sub-parsers that need higher indices should no-op.
+        self.assertFalse(pe.resources)
+        self.assertFalse(pe.runtime_functions)
+        self.assertFalse(pe.safe_seh_handlers)
+        self.assertFalse(pe.cfg_function_rvas)
+        self.assertFalse(pe.bound_imports)
+        self.assertFalse(pe.delay_imports)
+
     def test_empty_data_directory_index(self):
         """Optional header listing fewer than 16 data dirs still parses."""
         # _build_pe always provides space for 16 entries; pass only one
