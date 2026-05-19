@@ -427,6 +427,72 @@ class Testing(unittest.TestCase):
             if out_root.exists():
                 _shutil.rmtree(out_root)
 
+    def test_win32_reassemble_byte_identical_pe32_plus(self):
+        """PE32+ equivalent of the byte-identical reassembly test.
+        Generate the x86_64 fixture, split with exact_encoding on text
+        + rdata, run win32_reassemble, then byte-compare against the
+        original PE."""
+        import shutil as _shutil
+
+        if any(_shutil.which(t) is None for t in ("as", "objcopy")):
+            self.skipTest("`as` / `objcopy` not installed")
+
+        spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False
+        fixture_dir = Path("test/win32_app64")
+        gen_spec = importlib.util.spec_from_file_location(
+            "_win32_reasm_exact_gen64", fixture_dir / "generate.py"
+        )
+        gen = importlib.util.module_from_spec(gen_spec)
+        gen_spec.loader.exec_module(gen)
+        gen.main()
+
+        out_root = fixture_dir / "split-reasm-exact"
+        if out_root.exists():
+            shutil.rmtree(out_root)
+
+        exact_yaml = fixture_dir / "splat-reasm-exact.yaml"
+        exact_yaml.write_text(
+            (fixture_dir / "splat.yaml")
+            .read_text(encoding="utf-8")
+            .replace("base_path: split", "base_path: split-reasm-exact")
+            .replace(
+                "[0x200, text, main_text]",
+                "{ start: 0x200, type: text, name: main_text, exact_encoding: true }",
+            )
+            .replace(
+                "[0x400, rodata, main_rdata]",
+                "{ start: 0x400, type: rodata, name: main_rdata, exact_encoding: true }",
+            )
+            .replace(
+                "[0x600, pdata, main_pdata]",
+                "{ start: 0x600, type: pdata, name: main_pdata, exact_encoding: true }",
+            )
+        )
+
+        from src.splat.scripts.split import main as splat_main
+        from src.splat.scripts.win32_reassemble import reassemble
+
+        splat_main([exact_yaml], None, False)
+
+        out_path = fixture_dir / "win32_app64.reasm-exact.exe"
+        if out_path.exists():
+            out_path.unlink()
+        try:
+            reassemble(exact_yaml, out_path, verbose=False)
+            orig = (fixture_dir / "win32_app64.exe").read_bytes()
+            reasm = out_path.read_bytes()
+            self.assertEqual(
+                orig, reasm,
+                f"reassembled PE32+ diverges from original "
+                f"({sum(1 for a,b in zip(orig, reasm) if a != b)} mismatches)",
+            )
+        finally:
+            for p in (out_path, exact_yaml):
+                if p.exists():
+                    p.unlink()
+            if out_root.exists():
+                _shutil.rmtree(out_root)
+
     def test_win32_exact_encoding_pe32_plus(self):
         """Mirror of `test_win32_exact_encoding` for the PE32+ fixture.
         Locks down that x86_64 emit_disasm + exact_encoding round-trips

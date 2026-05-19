@@ -19,6 +19,24 @@ class Win32SegPdata(CommonSegment):
     def is_rodata() -> bool:
         return True
 
+    @property
+    def exact_encoding(self) -> bool:
+        """Mirror Win32SegText / Win32SegData semantics: per-subsegment
+        YAML wins; falls back to parent code-group YAML. When on, the
+        emitted .long uses raw hex RVA values rather than symbolic
+        `func_<va> - ImageBase` expressions — necessary for the
+        win32_reassemble byte-identical round-trip since cross-segment
+        symbols would otherwise resolve to 0 without ld."""
+        if isinstance(self.yaml, dict):
+            v = self.yaml.get("exact_encoding")
+            if v is not None:
+                return bool(v)
+        if self.parent is not None and isinstance(self.parent.yaml, dict):
+            v = self.parent.yaml.get("exact_encoding")
+            if v is not None:
+                return bool(v)
+        return False
+
     def get_linker_section(self) -> str:
         return ".pdata"
 
@@ -47,6 +65,7 @@ class Win32SegPdata(CommonSegment):
 
         pe = win32_platform.info
         data = rom_bytes[self.rom_start : self.rom_end]
+        exact = self.exact_encoding
 
         def resolve_func_rva(rva: int) -> str:
             """Map a RUNTIME_FUNCTION RVA (a function start, end, or
@@ -128,12 +147,21 @@ class Win32SegPdata(CommonSegment):
                     unwind_comment = (
                         f" prolog=0x{unwind_decoded.prolog_size:X} [{prolog_ops}]"
                     )
-                f.write(
-                    f"    .long {resolve_func_rva(begin)} - 0x{pe.image_base:X}"
-                    f", {resolve_func_rva(end)} - 0x{pe.image_base:X}"
-                    f", {uw_expr}"
-                    f"  /* [{entry_index}] RUNTIME_FUNCTION{unwind_comment} */\n"
-                )
+                if exact:
+                    # Byte-identical mode: emit raw RVAs so the
+                    # assembled output matches the original bytes
+                    # without needing cross-segment symbol resolution.
+                    f.write(
+                        f"    .long 0x{begin:X}, 0x{end:X}, 0x{unwind:X}"
+                        f"  /* [{entry_index}] RUNTIME_FUNCTION{unwind_comment} */\n"
+                    )
+                else:
+                    f.write(
+                        f"    .long {resolve_func_rva(begin)} - 0x{pe.image_base:X}"
+                        f", {resolve_func_rva(end)} - 0x{pe.image_base:X}"
+                        f", {uw_expr}"
+                        f"  /* [{entry_index}] RUNTIME_FUNCTION{unwind_comment} */\n"
+                    )
                 i += 12
                 entry_index += 1
 
