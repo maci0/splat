@@ -2130,6 +2130,47 @@ class CreateConfigExportLabelDedupTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class CreateConfigSectionNameDedupTest(unittest.TestCase):
+    def test_duplicate_section_names_disambiguated_in_yaml(self):
+        """PE format doesn't require unique section names. A packed or
+        hand-crafted image with two '.text' sections must still produce
+        a valid splat YAML (no duplicate segment names)."""
+        # Two .text-named sections.
+        sec_body = b"\x90" * FILE_ALIGN
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": sec_body},
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x2000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
+                 "chars": 0x60000020, "body": sec_body},
+            ],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-dupesec-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "dupe.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            yaml_path = tmpdir / "dupe.exe.yaml"
+            yaml_txt = yaml_path.read_text()
+            # First occurrence keeps the bare name; second gets a "_1" suffix.
+            self.assertIn("name: text", yaml_txt)
+            self.assertIn("name: text_1", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigLeadingDigitSanitizeTest(unittest.TestCase):
     def test_export_starting_with_digit_gets_underscore_prefix(self):
         """Exports named with a leading digit (legacy D3D / some Delphi

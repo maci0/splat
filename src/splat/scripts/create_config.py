@@ -450,6 +450,16 @@ options:
         and (s.characteristics & SCN_CNT_UNINITIALIZED_DATA)
     ]
 
+    # Disambiguate duplicate section names (PE spec doesn't require
+    # uniqueness; some packers and hand-crafted images have repeats).
+    seen_names: dict = {}
+
+    def _unique_name(raw: str) -> str:
+        n = remove_invalid_path_characters(raw.lstrip(".") or "section")
+        count = seen_names.get(n, 0)
+        seen_names[n] = count + 1
+        return n if count == 0 else f"{n}_{count}"
+
     for s in file_sections:
         # Derive a sensible subsegment type from the section flags.
         if s.characteristics & (SCN_CNT_CODE | SCN_MEM_EXECUTE):
@@ -459,7 +469,7 @@ options:
         else:
             sub_type = "rodata"
 
-        safe_name = remove_invalid_path_characters(s.name.lstrip(".") or "section")
+        safe_name = _unique_name(s.name)
         vram = pe.image_base + s.virtual_address
         segments += f"""\
   - name: {safe_name}
@@ -483,7 +493,7 @@ options:
 """
 
     for s in bss_sections:
-        safe_name = remove_invalid_path_characters(s.name.lstrip(".") or "bss")
+        safe_name = _unique_name(s.name or "bss")
         vram = pe.image_base + s.virtual_address
         size = max(s.virtual_size, 0)
         segments += f"""\
