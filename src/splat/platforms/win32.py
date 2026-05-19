@@ -320,7 +320,10 @@ def parse_pe(data: bytes) -> PEInfo:
         pe.data_directories.append((rva, size))
 
     section_off = opt_off + size_of_optional_header
-    for i in range(num_sections):
+    # PE spec caps NumberOfSections at 96. Anything higher is malformed —
+    # cap defensively so we don't iterate a fuzzed huge value.
+    capped_num_sections = min(num_sections, 96)
+    for i in range(capped_num_sections):
         sh = section_off + i * 40
         if sh + 40 > len(data):
             log.error(f"win32 section header {i} runs past end of file")

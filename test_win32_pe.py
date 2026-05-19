@@ -2489,6 +2489,25 @@ class PEEdgeCasesTest(unittest.TestCase):
         self.assertEqual(pe.entry_point_rva, 0)
         # Should not crash later when consumers check entry_point_va.
 
+    def test_number_of_sections_capped_at_96(self):
+        """PE spec caps NumberOfSections at 96. Parser must not iterate
+        a fuzzed huge value (e.g. 0xFFFF) past the cap. Provide enough
+        bytes for the cap (96 * 40 = 3840) but declare 0xFFFF sections."""
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 0xFFFF, 0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        # Exactly 96 zeroed section headers — enough to hit the cap
+        # without going past EOF.
+        sec = b"\x00" * (40 * 96)
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        pe = win32_platform.parse_pe(bytes(header))
+        # Capped at 96 even though field claimed 65535.
+        self.assertEqual(len(pe.sections), 96)
+        self.assertEqual(pe.num_sections, 0xFFFF)  # raw field preserved
+
     def test_small_image_base(self):
         """Some embedded/specialty PEs use a tiny ImageBase (e.g. 0x10000
         for early drivers) instead of the standard 0x400000. Parser must
