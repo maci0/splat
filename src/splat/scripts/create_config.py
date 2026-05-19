@@ -720,6 +720,23 @@ options:
         )
         f.write("\n".join(symbol_addrs))
 
+    # One-line summary of the corpus so the user knows at-a-glance what
+    # auto-config found in their PE.
+    parts = [
+        f"{len(pe.sections)} sections",
+        f"{len(pe.exports)} exports" if pe.exports else None,
+        f"{len(pe.imports)} imports" if pe.imports else None,
+        f"{len(pe.delay_imports)} delay-imports" if pe.delay_imports else None,
+        f"{len(pe.tls_callback_vas)} TLS callbacks" if pe.tls_callback_vas else None,
+        f"{len(pe.safe_seh_handlers)} SafeSEH handlers" if pe.safe_seh_handlers else None,
+        f"{len(pe.cfg_function_rvas)} CFG targets" if pe.cfg_function_rvas else None,
+        f"{len(pe.runtime_functions)} RUNTIME_FUNCTIONs" if pe.runtime_functions else None,
+    ]
+    summary = ", ".join(p for p in parts if p)
+    print(f"Detected: {summary}.")
+    if pe.pdb_path:
+        print(f"PDB hint: {pe.pdb_path}")
+
 
 def do_elf(elf_path: Path, elf_bytes: bytes, objcopy: Optional[str]):
     elf = ps2elfinfo.Ps2Elf.get_info(elf_path, elf_bytes)
