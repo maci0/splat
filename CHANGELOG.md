@@ -119,6 +119,7 @@
   * Heuristic pointer prologue-byte set expanded (mov mem,imm; x87 FPU group; REX prefixes; inc/dec r32; clc/stc/cli/sti/cld/std) to catch more legitimate function pointers without expanding the false-positive surface.
   * Default `section_order` includes `.pdata` between `.data` and `.rodata` so PE32+ RUNTIME_FUNCTION segment placement is well-defined.
   * Test suite grew to 164 unit tests + 4 real-binary round-trip checks (`test_win32_app`, `test_win32_app64`, `test_win32_exact_encoding`, `test_win32_exact_encoding_pe32_plus`) — both byte-compare round-trips and assemble-clean smoke tests on the synthetic fixtures. The PE32+ exact-encoding test is new and catches x86_64-specific capstone-vs-GAS divergences the smoke-only path would miss.
+  * Internal code-quality pass: named constants for `IMAGE_DIRECTORY_ENTRY_*` indices, `IMAGE_OPTIONAL_HEADER.Magic` values, and `IMAGE_FILE_MACHINE_*` codes; extracted `_walk_thunk_array` / `_thunk_layout` / `ptr_layout` / `compute_iat_labels` / `compute_export_labels` / `sanitize_label` helpers to consolidate per-bitness logic and label generation; PE-format dataclasses (PEInfo, PESection, PEExport, PEImport) carry meaningful docstrings explaining semantic contracts. `symbol_addrs.txt` gains a provenance preamble (source filename + truncated sha1) and is regression-protected by an explicit test assertion.
 
 ### 0.40.0
 
