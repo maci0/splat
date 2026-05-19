@@ -2489,6 +2489,30 @@ class PEEdgeCasesTest(unittest.TestCase):
         self.assertEqual(pe.entry_point_rva, 0)
         # Should not crash later when consumers check entry_point_va.
 
+    def test_small_image_base(self):
+        """Some embedded/specialty PEs use a tiny ImageBase (e.g. 0x10000
+        for early drivers) instead of the standard 0x400000. Parser must
+        not assume any specific value, and entry_point_va must compose
+        correctly."""
+        # Standard PE32 with ImageBase overridden to 0x10000.
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 1, 0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
+        # ImageBase field is at offset 28 in PE32 optional header.
+        struct.pack_into("<I", opt, 28, 0x10000)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN
+        pe = win32_platform.parse_pe(bytes(buf))
+        self.assertEqual(pe.image_base, 0x10000)
+        self.assertEqual(pe.entry_point_va, 0x11000)  # base + entry RVA
+
     def test_excessive_data_directory_count_capped(self):
         """Some malformed/fuzzed PEs declare NumberOfRvaAndSizes far
         beyond the canonical 16. Parser must cap iteration at 16 rather
