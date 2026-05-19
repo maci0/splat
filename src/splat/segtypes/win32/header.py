@@ -69,6 +69,15 @@ _FILE_CHARACTERISTICS = [
 
 def _decode_flags(value: int, table) -> str:
     names = [name for bit, name in table if value & bit]
+    # Surface any leftover bits — preserves information when a binary
+    # uses a flag combination we haven't tabulated (e.g. newer
+    # IMAGE_DLLCHARACTERISTICS values).
+    known_mask = 0
+    for bit, _ in table:
+        known_mask |= bit
+    leftover = value & ~known_mask
+    if leftover:
+        names.append(f"unknown 0x{leftover:X}")
     return " | ".join(names) if names else "(none)"
 
 

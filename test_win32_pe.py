@@ -2921,6 +2921,37 @@ class CreateConfigYamlQuotedPathTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class Win32DecodeFlagsLeftoverTest(unittest.TestCase):
+    def test_unknown_bits_surface_in_decoded_flags(self):
+        """When a binary sets a Characteristics or DllCharacteristics
+        bit that isn't in our static lookup table, the decoder must
+        surface it rather than dropping it silently (which would hide
+        a feature flag the analyst needs to know about)."""
+        from src.splat.segtypes.win32.header import _decode_flags
+
+        table = [
+            (0x0001, "EXECUTABLE_IMAGE"),
+            (0x2000, "DLL"),
+        ]
+        # Mixed: one known bit + one unknown bit (0x4000).
+        decoded = _decode_flags(0x6001, table)
+        self.assertIn("EXECUTABLE_IMAGE", decoded)
+        self.assertIn("DLL", decoded)
+        self.assertIn("unknown 0x4000", decoded)
+
+    def test_no_leftover_when_all_bits_known(self):
+        from src.splat.segtypes.win32.header import _decode_flags
+
+        table = [(0x0001, "A"), (0x0002, "B")]
+        self.assertEqual(_decode_flags(0x0003, table), "A | B")
+
+    def test_none_when_value_is_zero(self):
+        from src.splat.segtypes.win32.header import _decode_flags
+
+        table = [(0x0001, "A")]
+        self.assertEqual(_decode_flags(0, table), "(none)")
+
+
 class Win32HeaderTruncatedOptionalHeaderTest(unittest.TestCase):
     def test_truncated_optional_header_falls_back_to_byte_block(self):
         """A malformed PE with SizeOfOptionalHeader smaller than the
