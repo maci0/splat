@@ -356,6 +356,28 @@ info: PEInfo = PEInfo()
 raw_image: bytes = b""
 
 
+def resolve_exact_encoding(
+    yaml: object, parent: "Optional[object]", default: bool = False
+) -> bool:
+    """Shared `exact_encoding` flag resolution used by Win32SegText /
+    Win32SegData / Win32SegPdata. Priority order matches what users
+    expect: per-subsegment YAML setting wins; if absent, fall back to
+    the parent code-group YAML; finally fall back to `default`. The
+    flag toggles label-substitution off so emitted bytes match the
+    original file verbatim (needed for byte-identical reassembly)."""
+    if isinstance(yaml, dict):
+        v = yaml.get("exact_encoding")
+        if v is not None:
+            return bool(v)
+    if parent is not None:
+        parent_yaml = getattr(parent, "yaml", None)
+        if isinstance(parent_yaml, dict):
+            v = parent_yaml.get("exact_encoding")
+            if v is not None:
+                return bool(v)
+    return default
+
+
 def sanitize_label(s: str) -> str:
     """Canonical GAS-label sanitization shared by every site that emits
     labels derived from PE strings. Non-alphanumeric chars become '_';

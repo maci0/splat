@@ -108,18 +108,10 @@ class Win32SegText(CommonSegment):
 
     @property
     def exact_encoding(self) -> bool:
-        # Per-subsegment YAML wins.
-        if isinstance(self.yaml, dict):
-            v = self.yaml.get("exact_encoding")
-            if v is not None:
-                return bool(v)
-        # Then parent (top-level code group) YAML — lets a whole text
-        # group opt into exact mode in one go.
-        if self.parent is not None and isinstance(self.parent.yaml, dict):
-            v = self.parent.yaml.get("exact_encoding")
-            if v is not None:
-                return bool(v)
-        return self.EXACT_ENCODING_DEFAULT
+        from ...platforms.win32 import resolve_exact_encoding
+        return resolve_exact_encoding(
+            self.yaml, self.parent, self.EXACT_ENCODING_DEFAULT
+        )
 
     def out_path(self) -> Path:
         return options.opts.asm_path / self.dir / f"{self.name}.s"

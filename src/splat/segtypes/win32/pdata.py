@@ -21,21 +21,14 @@ class Win32SegPdata(CommonSegment):
 
     @property
     def exact_encoding(self) -> bool:
-        """Mirror Win32SegText / Win32SegData semantics: per-subsegment
-        YAML wins; falls back to parent code-group YAML. When on, the
-        emitted .long uses raw hex RVA values rather than symbolic
-        `func_<va> - ImageBase` expressions — necessary for the
-        win32_reassemble byte-identical round-trip since cross-segment
-        symbols would otherwise resolve to 0 without ld."""
-        if isinstance(self.yaml, dict):
-            v = self.yaml.get("exact_encoding")
-            if v is not None:
-                return bool(v)
-        if self.parent is not None and isinstance(self.parent.yaml, dict):
-            v = self.parent.yaml.get("exact_encoding")
-            if v is not None:
-                return bool(v)
-        return False
+        """When on, emit raw hex RVAs (`.long 0x<begin>, 0x<end>,
+        0x<unwind>`) rather than symbolic `func_<va> - ImageBase`
+        expressions — necessary for the win32_reassemble byte-
+        identical round-trip since cross-segment symbols would
+        otherwise resolve to 0 without ld. Inherits from parent
+        code-group YAML."""
+        from ...platforms.win32 import resolve_exact_encoding
+        return resolve_exact_encoding(self.yaml, self.parent)
 
     def get_linker_section(self) -> str:
         return ".pdata"

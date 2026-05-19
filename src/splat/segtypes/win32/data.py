@@ -162,15 +162,8 @@ class Win32SegData(CommonSegment):
         byte stays as `.byte`). Result: byte-identical .data after a
         standalone `as` assembly (no linker required to resolve labels).
         Inherits from parent code-group YAML if not set per-subsegment."""
-        if isinstance(self.yaml, dict):
-            v = self.yaml.get("exact_encoding")
-            if v is not None:
-                return bool(v)
-        if self.parent is not None and isinstance(self.parent.yaml, dict):
-            v = self.parent.yaml.get("exact_encoding")
-            if v is not None:
-                return bool(v)
-        return False
+        from ...platforms.win32 import resolve_exact_encoding
+        return resolve_exact_encoding(self.yaml, self.parent)
 
     @staticmethod
     def is_data() -> bool:
