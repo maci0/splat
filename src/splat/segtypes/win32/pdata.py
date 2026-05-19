@@ -15,6 +15,17 @@ from ...util import options
 
 
 class Win32SegPdata(CommonSegment):
+    """PE32+ exception-directory segment.
+
+    Renders the `.pdata` section's RUNTIME_FUNCTION records as a
+    `.long Begin, End, Unwind` row each — with `Begin`/`End` resolved
+    to symbolic `func_<va>` labels and the unwind RVA's high bit
+    (chained-record flag) preserved. With `exact_encoding: true` the
+    same rows emit raw hex RVAs instead, so the bytes survive a
+    standalone `as` reassembly without needing cross-segment symbol
+    resolution. Each row's trailing comment carries the decoded
+    UNWIND_INFO opcode list when one was found."""
+
     @staticmethod
     def is_rodata() -> bool:
         return True

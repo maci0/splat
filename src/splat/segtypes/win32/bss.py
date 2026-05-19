@@ -8,6 +8,15 @@ from ...util import options
 
 
 class Win32SegBss(CommonSegment):
+    """Uninitialised data segment (`.bss`).
+
+    Emits a `.section .bss, "wa"` block with a single `.space N`
+    directive — the loader zero-fills these bytes at map time, so
+    they have no on-file representation. `reserved_size` resolves to
+    the YAML's `bss_size:` value if set, else `vram_end - vram_start`,
+    else zero (in which case the segment is degenerate and the create-
+    config layer skips it)."""
+
     @staticmethod
     def is_noload() -> bool:
         return True
