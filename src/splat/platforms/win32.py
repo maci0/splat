@@ -612,6 +612,15 @@ def parse_exports(data: bytes, pe: PEInfo) -> None:
         )
 
 
+def _thunk_layout(pe: PEInfo) -> "Tuple[int, int, str]":
+    """Per-bitness thunk-array constants: (size_bytes, ordinal_flag, struct_fmt).
+    PE32 thunks are 32-bit DWORDs with the ordinal flag at bit 31;
+    PE32+ thunks are 64-bit QWORDs with the ordinal flag at bit 63."""
+    if pe.is_pe32_plus:
+        return 8, 1 << 63, "<Q"
+    return 4, 1 << 31, "<I"
+
+
 def _walk_thunk_array(
     data: bytes,
     pe: PEInfo,
@@ -675,10 +684,7 @@ def parse_imports(data: bytes, pe: PEInfo) -> None:
     if imp_off is None:
         return
 
-    is_pe32_plus = pe.is_pe32_plus
-    thunk_size = 8 if is_pe32_plus else 4
-    ordinal_flag = (1 << 63) if is_pe32_plus else (1 << 31)
-    thunk_fmt = "<Q" if is_pe32_plus else "<I"
+    thunk_size, ordinal_flag, thunk_fmt = _thunk_layout(pe)
 
     desc_off = imp_off
     # Cap descriptor count at a sane maximum to bound parse cost on
@@ -727,10 +733,7 @@ def parse_delay_imports(data: bytes, pe: PEInfo) -> None:
     if di_off is None:
         return
 
-    is_pe32_plus = pe.is_pe32_plus
-    thunk_size = 8 if is_pe32_plus else 4
-    ordinal_flag = (1 << 63) if is_pe32_plus else (1 << 31)
-    thunk_fmt = "<Q" if is_pe32_plus else "<I"
+    thunk_size, ordinal_flag, thunk_fmt = _thunk_layout(pe)
 
     desc_off = di_off
     end = di_off + di_size
