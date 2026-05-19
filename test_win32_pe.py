@@ -673,6 +673,58 @@ class PEExceptionTableTest(unittest.TestCase):
 
 
 class PEBoundImportsTest(unittest.TestCase):
+    def test_bound_import_with_forwarder_refs(self):
+        """Bound-import descriptor lists module forwarder refs after
+        itself in the same table. Verify they're collected."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        bi_size = 8 * 4  # main descriptor + 2 forwarders + null
+        body = bytearray(0x80)
+        # Main descriptor: 2 forwarder refs follow.
+        struct.pack_into("<IHH", body, 0, 0xDEADBEEF, bi_size, 2)
+        # Two forwarder-ref entries (timestamp/name_off/0).
+        struct.pack_into("<IHH", body, 8, 0xCAFEBABE, bi_size + 13, 0)
+        struct.pack_into("<IHH", body, 16, 0xBADC0DE5, bi_size + 24, 0)
+        # Null-terminator descriptor.
+        struct.pack_into("<IHH", body, 24, 0, 0, 0)
+        body[bi_size : bi_size + 13] = b"KERNEL32.dll\x00"
+        body[bi_size + 13 : bi_size + 24] = b"USER32.dll\x00"
+        body[bi_size + 24 : bi_size + 34] = b"GDI32.dll\x00"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (rdata_rva, bi_size + 33),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(len(pe.bound_imports), 1)
+        self.assertEqual(pe.bound_imports[0].dll, "KERNEL32.dll")
+        self.assertEqual(
+            pe.bound_imports[0].forwarder_refs, ["USER32.dll", "GDI32.dll"]
+        )
+
     def test_named_bound_import(self):
         # Bound-import table sits at .rdata RVA 0x2000. DLL name string sits
         # 0x18 bytes after the directory start.
