@@ -1888,6 +1888,31 @@ class Win32SegtypeAliasTest(unittest.TestCase):
         self.assertEqual(Win32SegAsm.__bases__, (Win32SegText,))
 
 
+class Win32ResourceTypeNamesTest(unittest.TestCase):
+    def test_standard_resource_type_names(self):
+        """RESOURCE_TYPE_NAMES covers all standard Win32 resource IDs
+        (winuser.h RT_*) so the header summary renders them by name
+        instead of as `TYPE_<n>`."""
+        from src.splat.platforms.win32 import RESOURCE_TYPE_NAMES
+
+        # Spot-check a representative slice from the standard set.
+        expected = {
+            1: "CURSOR",
+            2: "BITMAP",
+            3: "ICON",
+            4: "MENU",
+            5: "DIALOG",
+            6: "STRING",
+            14: "GROUP_ICON",
+            16: "VERSION",
+            24: "MANIFEST",
+        }
+        for rid, name in expected.items():
+            self.assertEqual(
+                RESOURCE_TYPE_NAMES.get(rid), name, f"RT id {rid}"
+            )
+
+
 class Win32LinkerVersionTest(unittest.TestCase):
     def test_linker_version_label_known_majors(self):
         """linker_version_label maps each MSVC major version to a
