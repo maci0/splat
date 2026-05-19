@@ -382,6 +382,7 @@ segments:
 
 
 def create_win32_config(exe_path: Path, exe_bytes: bytes):
+    from ..platforms import win32 as _w32
     from ..platforms.win32 import parse_pe, SCN_CNT_CODE, SCN_CNT_UNINITIALIZED_DATA, SCN_MEM_EXECUTE, SCN_MEM_WRITE
 
     pe = parse_pe(exe_bytes)
@@ -567,7 +568,7 @@ options:
     ):
         tail_segs.append((pe.coff_symtab_ptr, "coff_symtab"))
     if len(pe.data_directories) > 4:
-        cert_ptr, cert_size = pe.data_directories[4]
+        cert_ptr, cert_size = pe.data_directories[_w32.DIR_CERTIFICATE]
         # Authenticode signature: directory entry 4 (Certificate Table)
         # is a FILE offset / size pair (unlike the RVA-based entries).
         if cert_ptr and cert_size and cert_ptr < len(exe_bytes):
@@ -593,7 +594,6 @@ options:
     # the disassembly labels them. Some DLLs are built without DllMain and
     # leave AddressOfEntryPoint = 0 — skip the entrypoint symbol in that
     # case so we don't emit a label pointing at the PE header.
-    from ..platforms import win32 as _w32
     _sanitize_id = _w32.sanitize_label
 
     symbol_addrs: List[str] = []

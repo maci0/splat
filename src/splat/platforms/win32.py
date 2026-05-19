@@ -30,6 +30,23 @@ MACHINE_ARM64 = 0xAA64  # AArch64 (Windows on ARM 64-bit)
 OPT_MAGIC_PE32 = 0x10B
 OPT_MAGIC_PE32_PLUS = 0x20B
 
+# IMAGE_DIRECTORY_ENTRY_* indices into pe.data_directories.
+DIR_EXPORT = 0
+DIR_IMPORT = 1
+DIR_RESOURCE = 2
+DIR_EXCEPTION = 3
+DIR_CERTIFICATE = 4
+DIR_BASERELOC = 5
+DIR_DEBUG = 6
+DIR_ARCHITECTURE = 7
+DIR_GLOBALPTR = 8
+DIR_TLS = 9
+DIR_LOAD_CONFIG = 10
+DIR_BOUND_IMPORT = 11
+DIR_IAT = 12
+DIR_DELAY_IMPORT = 13
+DIR_COM_DESCRIPTOR = 14
+
 # Section header flags (IMAGE_SCN_*)
 SCN_CNT_CODE = 0x00000020
 SCN_CNT_INITIALIZED_DATA = 0x00000040
@@ -487,7 +504,7 @@ def parse_exports(data: bytes, pe: PEInfo) -> None:
     """Populate `pe.exports` and `pe.export_dll_name` from data directory 0."""
     if not pe.data_directories:
         return
-    exp_rva, exp_size = pe.data_directories[0]
+    exp_rva, exp_size = pe.data_directories[DIR_EXPORT]
     if exp_rva == 0 or exp_size == 0:
         return
     exp_off = pe.rva_to_file_offset(exp_rva)
@@ -576,7 +593,7 @@ def parse_imports(data: bytes, pe: PEInfo) -> None:
     """
     if len(pe.data_directories) < 2:
         return
-    imp_rva, imp_size = pe.data_directories[1]
+    imp_rva, imp_size = pe.data_directories[DIR_IMPORT]
     if imp_rva == 0 or imp_size == 0:
         return
     imp_off = pe.rva_to_file_offset(imp_rva)
@@ -656,7 +673,7 @@ def parse_delay_imports(data: bytes, pe: PEInfo) -> None:
     VAs that need ImageBase subtraction (v1, legacy)."""
     if len(pe.data_directories) < 14:
         return
-    di_rva, di_size = pe.data_directories[13]
+    di_rva, di_size = pe.data_directories[DIR_DELAY_IMPORT]
     if di_rva == 0 or di_size == 0:
         return
     di_off = pe.rva_to_file_offset(di_rva)
@@ -746,7 +763,7 @@ def parse_bound_imports(data: bytes, pe: PEInfo) -> None:
     forwarder-ref descriptors."""
     if len(pe.data_directories) < 12:
         return
-    bi_rva, bi_size = pe.data_directories[11]
+    bi_rva, bi_size = pe.data_directories[DIR_BOUND_IMPORT]
     if bi_rva == 0 or bi_size == 0:
         return
     bi_off = pe.rva_to_file_offset(bi_rva)
@@ -791,7 +808,7 @@ def parse_load_config(data: bytes, pe: PEInfo) -> None:
     """
     if len(pe.data_directories) < 11:
         return
-    lc_rva, lc_size = pe.data_directories[10]
+    lc_rva, lc_size = pe.data_directories[DIR_LOAD_CONFIG]
     if lc_rva == 0 or lc_size == 0:
         return
     lc_off = pe.rva_to_file_offset(lc_rva)
@@ -871,7 +888,7 @@ def parse_exception_table(data: bytes, pe: PEInfo) -> None:
     and for navigating SEH unwind data."""
     if len(pe.data_directories) < 4:
         return
-    et_rva, et_size = pe.data_directories[3]
+    et_rva, et_size = pe.data_directories[DIR_EXCEPTION]
     if et_rva == 0 or et_size == 0:
         return
     et_off = pe.rva_to_file_offset(et_rva)
@@ -903,7 +920,7 @@ def parse_relocations(data: bytes, pe: PEInfo) -> None:
     skipped."""
     if len(pe.data_directories) < 6:
         return
-    rel_rva, rel_size = pe.data_directories[5]
+    rel_rva, rel_size = pe.data_directories[DIR_BASERELOC]
     if rel_rva == 0 or rel_size == 0:
         return
     rel_off = pe.rva_to_file_offset(rel_rva)
@@ -937,7 +954,7 @@ def parse_debug(data: bytes, pe: PEInfo) -> None:
     embeds either an `RSDS`/`NB10` record with a trailing PDB filename."""
     if len(pe.data_directories) < 7:
         return
-    dbg_rva, dbg_size = pe.data_directories[6]
+    dbg_rva, dbg_size = pe.data_directories[DIR_DEBUG]
     if dbg_rva == 0 or dbg_size == 0:
         return
     dbg_off = pe.rva_to_file_offset(dbg_rva)
@@ -990,7 +1007,7 @@ def parse_tls(data: bytes, pe: PEInfo) -> None:
     of callback VAs."""
     if len(pe.data_directories) < 10:
         return
-    tls_rva, tls_size = pe.data_directories[9]
+    tls_rva, tls_size = pe.data_directories[DIR_TLS]
     if tls_rva == 0 or tls_size == 0:
         return
     tls_off = pe.rva_to_file_offset(tls_rva)
@@ -1094,7 +1111,7 @@ def parse_resources(data: bytes, pe: PEInfo) -> None:
     record each leaf in `pe.resources`."""
     if len(pe.data_directories) < 3:
         return
-    rsrc_rva, rsrc_size = pe.data_directories[2]
+    rsrc_rva, rsrc_size = pe.data_directories[DIR_RESOURCE]
     if rsrc_rva == 0 or rsrc_size == 0:
         return
     root_off = pe.rva_to_file_offset(rsrc_rva)
