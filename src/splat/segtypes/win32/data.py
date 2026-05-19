@@ -252,19 +252,29 @@ class Win32SegData(CommonSegment):
             0x6A, 0x68,                                       # push imm
             0x80, 0x81, 0x83,                                 # ALU r/m, imm
             0x8B, 0x89, 0x8A, 0x88,                           # mov r/m, ...
+            0x8C, 0x8E,                                       # mov sreg/r
             0x8D,                                             # lea
+            0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7,   # mov r8, imm8
             0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF,   # mov r32, imm32
+            0xC6, 0xC7,                                       # mov r/m, imm
             0xE8, 0xE9,                                       # call/jmp rel32
             0xFF,                                             # call/jmp [...]
             0xC2, 0xC3,                                       # ret (leaf)
+            0xCB, 0xCA,                                       # retf
             0xCC,                                             # int3
             0xEB,                                             # short jmp
             0x33, 0x31,                                       # xor reg, reg
             0x0F,                                             # two-byte op
             0x66,                                             # opsize prefix
             0x64, 0x65,                                       # fs/gs prefix
-            0xF3,                                             # rep prefix
-            0x48, 0x49, 0x4C, 0x4D,                           # x86_64 REX
+            0x67,                                             # addrsize prefix
+            0xF2, 0xF3,                                       # rep / repne prefix
+            0xF6, 0xF7,                                       # test/not/neg r/m
+            0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,   # inc r32 (32-bit) / REX (64-bit)
+            0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F,   # dec r32 (32-bit) / REX.W+ (64-bit)
+            0xA0, 0xA1, 0xA2, 0xA3,                           # mov mov al/eax, [mem]
+            0xD8, 0xD9, 0xDA, 0xDB, 0xDC, 0xDD, 0xDE, 0xDF,   # FPU x87 group
+            0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD,               # clc/stc/cli/sti/cld/std (rare leaf)
         }
         offsets: List[int] = []
         ptr_size = 8 if pe.is_pe32_plus else 4
