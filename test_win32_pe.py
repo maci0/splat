@@ -2230,6 +2230,41 @@ class RvaToFileOffsetVirtualTailTest(unittest.TestCase):
         self.assertEqual(pe.rva_to_file_offset(0x1100), FILE_ALIGN + 0x100)
 
 
+class Win32PublicSurfaceTest(unittest.TestCase):
+    """Smoke-test the public symbols of the win32 platform module so
+    refactors that accidentally make a constant private (`_NAME`) or
+    rename a dataclass break loudly instead of silently downstream."""
+
+    def test_public_names_present(self):
+        from src.splat.platforms import win32
+
+        expected = {
+            # Dataclasses
+            "PEInfo", "PESection", "PEExport", "PEImport",
+            "PEBoundImport", "PEResource",
+            # Top-level entry points
+            "parse_pe", "init", "info", "raw_image",
+            # Helpers used by segtypes + create_config
+            "sanitize_label", "compute_iat_labels",
+            "compute_export_labels", "ptr_layout",
+            # Machine codes
+            "MACHINE_I386", "MACHINE_AMD64",
+            "MACHINE_ARM32", "MACHINE_ARM64",
+            # Magic values
+            "OPT_MAGIC_PE32", "OPT_MAGIC_PE32_PLUS",
+            # Data directory indices
+            "DIR_EXPORT", "DIR_IMPORT", "DIR_RESOURCE",
+            "DIR_EXCEPTION", "DIR_CERTIFICATE", "DIR_BASERELOC",
+            "DIR_DEBUG", "DIR_TLS", "DIR_LOAD_CONFIG",
+            "DIR_BOUND_IMPORT", "DIR_DELAY_IMPORT",
+        }
+        for name in expected:
+            self.assertTrue(
+                hasattr(win32, name),
+                f"public win32 platform surface missing '{name}'",
+            )
+
+
 class Win32MachineTypeTableTest(unittest.TestCase):
     def test_machine_types_cover_arch_id_landscape(self):
         from src.splat.segtypes.win32.header import _MACHINE_TYPES
