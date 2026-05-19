@@ -4,7 +4,7 @@
 
 A binary splitting tool to assist with decompilation and modding projects
 
-Currently, only N64, PSX, PS2 and PSP binaries are supported. More platforms may come in the future.
+Currently, N64, PSX, PS2, PSP and Win32 PE (x86 / x86_64) binaries are supported. More platforms may come in the future.
 
 Please check out the [wiki](https://github.com/ethteck/splat/wiki) for more information including [examples](https://github.com/ethteck/splat/wiki/Examples) of projects that use splat.
 
@@ -27,6 +27,7 @@ splat64[mips]>=0.40.0,<1.0.0
 ### Optional dependencies
 
 - `mips`: Required when using the N64, PSX, PS2 or PSP platforms.
+- `win32`: Required when using the Win32 PE platform (pulls in Capstone for x86 / x86_64 disassembly).
 - `dev`: Installs all the available dependencies groups and other packages for development.
 
 ### Gamecube / Wii
