@@ -304,7 +304,7 @@ def compute_iat_labels(pe: PEInfo) -> Dict[int, str]:
     symbol_addrs.txt — including dedup-on-collision behaviour — so
     disassembly references resolve to the same identifiers."""
     out: Dict[int, str] = {}
-    seen_eager: set = set()
+    seen_eager: Set[str] = set()
     for imp in pe.imports:
         slot_va = pe.image_base + imp.iat_rva
         nm = imp.name or f"ordinal_{imp.ordinal}"
@@ -319,7 +319,7 @@ def compute_iat_labels(pe: PEInfo) -> Dict[int, str]:
             full = f"{full}__rva{imp.iat_rva:X}"
         seen_eager.add(full)
         out[slot_va] = full
-    seen_delay: set = set()
+    seen_delay: Set[str] = set()
     for imp in pe.delay_imports:
         slot_va = pe.image_base + imp.iat_rva
         nm = imp.name or f"ordinal_{imp.ordinal}"
@@ -581,7 +581,7 @@ def parse_exports(data: bytes, pe: PEInfo) -> None:
     num_names = min(num_names, EXPORT_LIMIT)
 
     # Map ordinal-index → name (some functions are export-by-ordinal only).
-    name_for_ordinal: dict = {}
+    name_for_ordinal: Dict[int, str] = {}
     if names_off is not None and ordinals_off is not None:
         for i in range(num_names):
             if names_off + i * 4 + 4 > len(data):
