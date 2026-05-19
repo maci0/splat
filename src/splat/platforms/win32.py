@@ -304,32 +304,26 @@ def compute_iat_labels(pe: PEInfo) -> Dict[int, str]:
     symbol_addrs.txt — including dedup-on-collision behaviour — so
     disassembly references resolve to the same identifiers."""
     out: Dict[int, str] = {}
-    seen_eager: Set[str] = set()
-    for imp in pe.imports:
-        slot_va = pe.image_base + imp.iat_rva
-        nm = imp.name or f"ordinal_{imp.ordinal}"
-        safe = sanitize_label(nm)
-        # Empty DLL stem after sanitisation (corrupted descriptor with
-        # missing name) — substitute a recognisable placeholder so the
-        # resulting label doesn't collapse to `imp__foo` for every
-        # unknown-DLL import.
-        dll_safe = sanitize_label(imp.dll) or "unknown"
-        full = f"imp_{dll_safe}_{safe}"
-        if full in seen_eager:
-            full = f"{full}__rva{imp.iat_rva:X}"
-        seen_eager.add(full)
-        out[slot_va] = full
-    seen_delay: Set[str] = set()
-    for imp in pe.delay_imports:
-        slot_va = pe.image_base + imp.iat_rva
-        nm = imp.name or f"ordinal_{imp.ordinal}"
-        safe = sanitize_label(nm)
-        dll_safe = sanitize_label(imp.dll) or "unknown"
-        full = f"dimp_{dll_safe}_{safe}"
-        if full in seen_delay:
-            full = f"{full}__rva{imp.iat_rva:X}"
-        seen_delay.add(full)
-        out[slot_va] = full
+
+    def populate(items: "List[PEImport]", prefix: str) -> None:
+        seen: Set[str] = set()
+        for imp in items:
+            slot_va = pe.image_base + imp.iat_rva
+            nm = imp.name or f"ordinal_{imp.ordinal}"
+            safe = sanitize_label(nm)
+            # Empty DLL stem after sanitisation (corrupted descriptor
+            # with missing name) — substitute a recognisable
+            # placeholder so the label doesn't collapse to `imp__foo`
+            # for every unknown-DLL import.
+            dll_safe = sanitize_label(imp.dll) or "unknown"
+            full = f"{prefix}_{dll_safe}_{safe}"
+            if full in seen:
+                full = f"{full}__rva{imp.iat_rva:X}"
+            seen.add(full)
+            out[slot_va] = full
+
+    populate(pe.imports, "imp")
+    populate(pe.delay_imports, "dimp")
     return out
 
 
