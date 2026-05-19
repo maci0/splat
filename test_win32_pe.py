@@ -2248,6 +2248,7 @@ class Win32PublicSurfaceTest(unittest.TestCase):
             # Helpers used by segtypes + create_config
             "sanitize_label", "compute_iat_labels",
             "compute_export_labels", "ptr_layout",
+            "resolve_exact_encoding",
             # Machine codes
             "MACHINE_I386", "MACHINE_AMD64",
             "MACHINE_ARM32", "MACHINE_ARM64",
