@@ -1793,6 +1793,39 @@ class WideStringDetectionTest(unittest.TestCase):
         self.assertIsNone(_scan_wide_string(blob, 0))
 
 
+class Win32SegBssTest(unittest.TestCase):
+    def test_reserved_size_resolution(self):
+        """Win32SegBss.reserved_size resolves: explicit yaml bss_size
+        wins over vram-end - vram-start arithmetic; zero when neither
+        is available."""
+        from src.splat.segtypes.win32.bss import Win32SegBss
+
+        obj = Win32SegBss.__new__(Win32SegBss)
+
+        # 1) Explicit bss_size in yaml wins.
+        obj.yaml = {"bss_size": 0x1000}
+        obj.vram_start = 0x10000000
+        # vram_end is a @property derived from vram_start + size; ignore
+        # via direct attribute override.
+        self.assertEqual(obj.reserved_size, 0x1000)
+
+        # 2) Without bss_size, fall back to vram_end - vram_start.
+        # vram_end on the Segment base is a property — emulate by giving
+        # obj.rom_start / rom_end so size resolves to a known value.
+        obj.yaml = {}
+        obj.rom_start = 0
+        obj.rom_end = 0x500
+        # vram_end = vram_start + (rom_end - rom_start) = 0x10000500
+        self.assertEqual(obj.reserved_size, 0x500)
+
+        # 3) Neither yaml nor a derivable vram_end → 0.
+        obj.yaml = {}
+        obj.rom_start = None
+        obj.rom_end = None
+        obj.vram_start = None
+        self.assertEqual(obj.reserved_size, 0)
+
+
 class Win32ExactEncodingInheritanceTest(unittest.TestCase):
     def test_inheritance_chain(self):
         """exact_encoding resolves in priority order:
