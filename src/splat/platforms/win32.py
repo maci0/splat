@@ -278,6 +278,16 @@ def compute_export_labels(
 
 
 def parse_pe(data: bytes) -> PEInfo:
+    """Parse `data` as a Win32 PE32 or PE32+ image and return a populated
+    `PEInfo`. Walks the DOS stub, COFF file header, optional header, and
+    every populated data directory (exports, imports, resources,
+    exception table, base relocations, debug info, TLS, load config,
+    bound imports, delay imports). Logs a fatal error and exits on
+    structural malformations: missing MZ/PE magics, mismatched
+    machine/magic combinations, optional header below the per-format
+    minimum size, or sections that run past EOF. Every iteration loop
+    has a defensive cap so a fuzzed PE can't make the parser scan past
+    realistic bounds. Safe to call on hand-crafted byte buffers."""
     if len(data) < 0x40 or data[:2] != DOS_MAGIC:
         log.error("win32 target does not start with an MZ DOS header")
 
@@ -1209,6 +1219,12 @@ MACHINE_ARM32 = 0x01C4  # ARMv7 Thumb-2
 
 
 def init(target_bytes: bytes):
+    """Splat platform entry point — called once per run with the full
+    target file bytes. Parses the PE, stashes the result in the
+    module-level `info` and `raw_image` globals (consulted by every
+    segtype + the disassembler), and rejects architectures we don't
+    have a Capstone backend for (ARM32 / ARM64 / unsupported machines)
+    with a friendly error pointing the user at the limitation."""
     global info, raw_image
     info = parse_pe(target_bytes)
     raw_image = target_bytes
