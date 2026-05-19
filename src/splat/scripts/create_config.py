@@ -485,8 +485,12 @@ options:
         return n if count == 0 else f"{n}_{count}"
 
     for s in file_sections:
-        # Derive a sensible subsegment type from the section flags.
-        if s.characteristics & (SCN_CNT_CODE | SCN_MEM_EXECUTE):
+        # Derive a sensible subsegment type. Special-case `.pdata` to
+        # the dedicated Win32SegPdata so RUNTIME_FUNCTION rows render
+        # structured instead of as opaque byte runs.
+        if pe.is_pe32_plus and s.name == ".pdata":
+            sub_type = "pdata"
+        elif s.characteristics & (SCN_CNT_CODE | SCN_MEM_EXECUTE):
             sub_type = "text"
         elif s.characteristics & SCN_MEM_WRITE:
             sub_type = "data"

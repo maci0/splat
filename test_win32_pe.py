@@ -2629,6 +2629,81 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigPdataDetectTest(unittest.TestCase):
+    def test_pe32_plus_pdata_section_gets_pdata_subtype(self):
+        """A PE32+ `.pdata` section should produce a `type: pdata`
+        subsegment so RUNTIME_FUNCTION rows render structured by
+        Win32SegPdata instead of as opaque bytes."""
+        # Minimal PE32+ with .text + .pdata.
+        body = b"\x90" * FILE_ALIGN
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": body},
+                {"name": b".pdata", "vsize": 0x10, "vaddr": 0x2000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
+                 "chars": 0x40000040, "body": body},
+            ],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-pdata-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "pd.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            yaml_txt = (tmpdir / "pd.exe.yaml").read_text()
+            # The .pdata section's subsegment should be type pdata.
+            self.assertIn(", pdata,", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_pe32_pdata_section_not_recognised(self):
+        """PE32 doesn't have a meaningful .pdata (RUNTIME_FUNCTION layout
+        only exists for x64 SEH). Even a section named .pdata in PE32
+        should fall through to rodata classification."""
+        body = b"\x00" * FILE_ALIGN
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * FILE_ALIGN},
+                {"name": b".pdata", "vsize": 0x10, "vaddr": 0x2000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
+                 "chars": 0x40000040, "body": body},
+            ],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-pdata32-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "pd32.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            yaml_txt = (tmpdir / "pd32.exe.yaml").read_text()
+            self.assertNotIn(", pdata,", yaml_txt)
+            self.assertIn(", rodata,", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigMsvcAutoDetectTest(unittest.TestCase):
     def test_linker_major_picks_matching_compiler_tag(self):
         """The PE optional header's MajorLinkerVersion identifies which
