@@ -1466,6 +1466,61 @@ class PEPlusImportTest(unittest.TestCase):
         self.assertEqual(pe.imports[0].iat_rva, iat_rva)
 
 
+class PEPlusOrdinalImportTest(unittest.TestCase):
+    def test_pe32_plus_ordinal_import(self):
+        """PE32+ ordinal-only imports set bit 63 of the 8-byte thunk
+        (vs bit 31 on PE32). Verify the 64-bit ordinal-flag path."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+
+        ilt_rva = rdata_rva + 0x28
+        iat_rva = rdata_rva + 0x40
+        dll_name_rva = rdata_rva + 0x60
+
+        body = bytearray(0x80)
+        struct.pack_into(
+            "<IIIII", body, 0x00,
+            ilt_rva, 0, 0, dll_name_rva, iat_rva,
+        )
+        # ILT: 8-byte ordinal-only entry (bit 63 set, low 16 = ordinal 42)
+        struct.pack_into("<Q", body, 0x28, (1 << 63) | 42)
+        struct.pack_into("<Q", body, 0x30, 0)
+        # IAT mirrors
+        struct.pack_into("<Q", body, 0x40, (1 << 63) | 42)
+        struct.pack_into("<Q", body, 0x48, 0)
+        body[0x60 : 0x60 + 10] = b"WS2_32.dll"
+
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[(0, 0), (rdata_rva, 0x28)],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertTrue(pe.is_pe32_plus)
+        self.assertEqual(len(pe.imports), 1)
+        self.assertEqual(pe.imports[0].dll, "WS2_32.dll")
+        self.assertIsNone(pe.imports[0].name)
+        self.assertEqual(pe.imports[0].ordinal, 42)
+
+
 class PEOrdinalImportTest(unittest.TestCase):
     def test_ordinal_import(self):
         rdata_rva = 0x2000
