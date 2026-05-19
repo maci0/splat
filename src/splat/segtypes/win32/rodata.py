@@ -1,7 +1,5 @@
 """Win32 .rodata segment — read-only initialized data."""
 
-from typing import Optional
-
 from .data import Win32SegData
 
 

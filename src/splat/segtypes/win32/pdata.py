@@ -11,7 +11,7 @@ import struct
 from typing import Optional
 
 from ..common.segment import CommonSegment
-from ...util import log, options
+from ...util import options
 
 
 class Win32SegPdata(CommonSegment):
