@@ -2629,6 +2629,50 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigSecurityCookieTest(unittest.TestCase):
+    def test_security_cookie_va_emits_symbol(self):
+        """A binary with /GS enabled has a SecurityCookie VA in its
+        LoadConfig directory. Promote it as a `security_cookie` data
+        symbol so disasm cross-references to the cookie's storage slot
+        resolve to a meaningful label."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        lc_size = 0x48
+        body = bytearray(0x80)
+        struct.pack_into("<I", body, 0, lc_size)
+        struct.pack_into("<I", body, 0x3C, IMAGE_BASE + rdata_rva + 0x50)
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x10},
+                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(0, 0)] * 10 + [(rdata_rva, lc_size)],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-gs-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "gs.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            txt = (tmpdir / "symbol_addrs.txt").read_text()
+            self.assertIn("security_cookie = 0x", txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigCfgSymbolsTest(unittest.TestCase):
     def test_cfg_function_rvas_emit_cfg_target_rows(self):
         """A /guard:cf-enabled PE lists every valid indirect-call target

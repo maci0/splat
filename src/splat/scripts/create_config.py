@@ -627,6 +627,15 @@ options:
                 trailing += f" ordinal {imp.ordinal}"
             symbol_addrs.append(f"{full} = 0x{slot_va:08X}; {trailing}")
 
+    if pe.security_cookie_va:
+        symbol_addrs.append("")
+        symbol_addrs.append(
+            "// /GS security cookie (xor'd with frame pointer at function entry)"
+        )
+        symbol_addrs.append(
+            f"security_cookie = 0x{pe.security_cookie_va:08X}; // type:u32"
+        )
+
     if pe.tls_callback_vas:
         symbol_addrs.append("")
         symbol_addrs.append(
