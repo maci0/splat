@@ -158,6 +158,11 @@ class PEInfo:
     # pointers (HIGHLOW for PE32, DIR64 for PE32+). Useful for emitting
     # data-section .long/.quad entries with symbolic targets.
     pointer_rvas: Set[int] = field(default_factory=set)
+    # Deprecated COFF symbol table at the end of the file (PE binaries
+    # essentially never have these populated — debug info lives in the
+    # external .pdb instead — but a non-zero value is informative.)
+    coff_symtab_ptr: int = 0
+    coff_num_symbols: int = 0
     # PDB filename embedded in the Debug directory's CodeView record, when
     # present.
     pdb_path: Optional[str] = None
@@ -217,8 +222,8 @@ def parse_pe(data: bytes) -> PEInfo:
         machine,
         num_sections,
         timestamp,
-        _ptr_to_symtab,
-        _num_symbols,
+        coff_symtab_ptr,
+        coff_num_symbols,
         size_of_optional_header,
         characteristics,
     ) = struct.unpack_from("<HHIIIHH", data, coff_off)
@@ -267,6 +272,8 @@ def parse_pe(data: bytes) -> PEInfo:
         characteristics=characteristics,
         is_pe32_plus=is_pe32_plus,
         pe_header_offset=pe_off,
+        coff_symtab_ptr=coff_symtab_ptr,
+        coff_num_symbols=coff_num_symbols,
     )
 
     # MajorLinkerVersion + MinorLinkerVersion (BYTE BYTE) at opt_off + 2.

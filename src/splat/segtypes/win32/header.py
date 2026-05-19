@@ -279,6 +279,11 @@ class Win32SegHeader(CommonSegHeader):
                 f" *   Linker:            {pe.linker_major}.{pe.linker_minor:02d}"
                 f"  ({linker_version_label(pe.linker_major, pe.linker_minor)})"
             )
+        if pe.coff_num_symbols:
+            out.append(
+                f" *   COFF symbols:      {pe.coff_num_symbols} at file 0x{pe.coff_symtab_ptr:X}"
+                "  (deprecated; unusual for PEs)"
+            )
         if pe.timestamp:
             import datetime as _dt
 
