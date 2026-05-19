@@ -2629,6 +2629,61 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigResourceOnlyDllTest(unittest.TestCase):
+    def test_pure_resource_dll_produces_loadable_yaml(self):
+        """A resource-only DLL has no entrypoint, no exports, no imports
+        — just a .rsrc section. create_win32_config should produce a
+        symbol_addrs.txt that contains no broken symbol entries (could
+        be empty) and a YAML that splat can load without errors."""
+        rsrc_body = b"\x00" * 0x40  # placeholder; not a real .rsrc tree
+        body = b"\x90" * FILE_ALIGN
+        # PE32 DLL: no exports/imports/relocs/etc., one .rsrc section.
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, 0xE0,
+            0x010F | 0x2000,  # IMAGE_FILE_DLL
+        )
+        opt = bytearray(_opt_header_pe32(entry_rva=0))
+        sec_rsrc = _section_header(
+            b".rsrc", 0x40, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x40000040
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec_rsrc
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + body[: len(rsrc_body)].ljust(
+            FILE_ALIGN, b"\x00"
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+        import yaml
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-rsrc-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            dll = tmpdir / "resonly.dll"
+            dll.write_bytes(bytes(buf))
+            create_win32_config(dll, bytes(buf))
+            sym = (tmpdir / "symbol_addrs.txt").read_text()
+            # No entrypoint = (entry was 0); no exports / imports.
+            self.assertNotIn("entrypoint =", sym)
+            # symbol_addrs has the splat preamble comment but no actual
+            # symbol bindings (no `name = 0x... ;` lines).
+            content_lines = [
+                ln for ln in sym.splitlines()
+                if ln.strip() and not ln.lstrip().startswith("//")
+            ]
+            self.assertEqual(content_lines, [])
+            # YAML must be loadable.
+            yaml_doc = yaml.safe_load((tmpdir / "resonly.dll.yaml").read_text())
+            self.assertEqual(yaml_doc["options"]["platform"], "win32")
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigBinClassificationTest(unittest.TestCase):
     def test_reloc_and_rsrc_sections_classified_as_bin(self):
         """`.reloc` and `.rsrc` are structured loader-time data — their
