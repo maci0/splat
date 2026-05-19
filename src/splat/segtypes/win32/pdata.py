@@ -111,9 +111,21 @@ class Win32SegPdata(CommonSegment):
                     entry_index += 1
                     pad = n - i
                     if pad > 0:
-                        f.write(
-                            f"    .space 0x{pad:X}  /* zero padding to section end */\n"
-                        )
+                        # In exact_encoding mode the trailing bytes after
+                        # the terminator must be preserved byte-for-byte —
+                        # PEs often pad section-tail with 0xCC (int3) or
+                        # 0x90 (nop), not zero. `.space` zeros the region;
+                        # emit the raw bytes instead.
+                        if exact:
+                            tail = data[i : n]
+                            hexed = ", ".join(f"0x{b:02X}" for b in tail)
+                            f.write(
+                                f"    .byte {hexed}  /* {pad} bytes pad-to-section-end */\n"
+                            )
+                        else:
+                            f.write(
+                                f"    .space 0x{pad:X}  /* zero padding to section end */\n"
+                            )
                     i = n
                     break
                 # Unwind RVA emitted as `unwind_<va> - ImageBase` when a

@@ -516,6 +516,11 @@ options:
 
     def _unique_name(raw: str) -> str:
         n = remove_invalid_path_characters(raw.lstrip(".") or "section")
+        # GAS labels can't start with a digit (PuTTY's `.00cfg`, MSVC's
+        # `.rdata$zzzdebug` numeric subsection, etc.). Prefix with `_`
+        # to keep the resulting `<name>_main` global label valid.
+        if n and n[0].isdigit():
+            n = "_" + n
         count = seen_names.get(n, 0)
         seen_names[n] = count + 1
         return n if count == 0 else f"{n}_{count}"
@@ -600,11 +605,18 @@ options:
         # is a FILE offset / size pair (unlike the RVA-based entries).
         if cert_ptr and cert_size and cert_ptr < len(exe_bytes):
             tail_segs.append((cert_ptr, "signature"))
+    # Post-section appendages have file offsets but no defined load
+    # VAs (the PE loader doesn't map them). Splat needs *some* VMA
+    # for each segment, so pin them at a high reserved range — well
+    # past the last section's VirtualAddress + VirtualSize — to keep
+    # the linker from assigning overlapping addresses.
+    tail_vma = pe.image_base + 0x10000000
     for start, name in sorted(tail_segs, key=lambda t: t[0]):
         segments += (
             f"  - {{ name: {name}, type: bin, "
-            f"start: 0x{start:X} }}\n\n"
+            f"start: 0x{start:X}, vram: 0x{tail_vma:X} }}\n\n"
         )
+        tail_vma += 0x100000
 
     segments += f"  - [0x{len(exe_bytes):X}]\n"
 

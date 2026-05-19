@@ -156,28 +156,32 @@ def reassemble(yaml_path: Path, out_path: Path, verbose: bool = False) -> Path:
         o_path.parent.mkdir(parents=True, exist_ok=True)
         _run([asm_tool, mode_flag, str(s_path), "-o", str(o_path)], verbose)
 
-    # Wrap .bin assets so ld can link them. (Splat's win32
-    # auto-config currently emits .reloc / .rsrc / coff_symtab /
-    # signature as bin segments — each lands in the linker script
-    # via its own SECTION block.)
+    # Wrap .bin assets so ld can link them. Splat's linker script
+    # references each bin as `<build_path>/assets/<rel>.o` (no .bin
+    # suffix), pulling the `.data` section that `objcopy -I binary`
+    # populates by default. Run `objcopy` from `bin_path.parent` so
+    # the embedded `_binary_<name>_start` symbols come out
+    # deterministic regardless of where the source file lives.
     for bin_path in bin_paths:
-        # Mirror the same build/asm/<rel>.s.o naming convention so
-        # the linker script can reference them uniformly.
         try:
             rel = bin_path.relative_to(asset_path)
         except ValueError:
             rel = Path(bin_path.name)
-        o_path = build_path / "asm" / rel.with_suffix(".bin.o")
+        o_rel = rel.with_suffix(".o")
+        o_path = build_path / "assets" / o_rel
         o_path.parent.mkdir(parents=True, exist_ok=True)
+        # objcopy from CWD=bin_path.parent so the auto-generated
+        # `_binary_<basename>_start` symbol uses just the filename.
         _run(
             [
                 objcopy,
                 "-I", "binary",
                 "-O", bin_obj_fmt,
                 "-B", bin_obj_arch,
-                str(bin_path), str(o_path),
+                bin_path.name, str(o_path.resolve()),
             ],
             verbose,
+            cwd=bin_path.parent,
         )
 
     # Link via the splat-generated linker script. Run from base_path

@@ -759,9 +759,19 @@ class Win32SegText(CommonSegment):
                     offset += 1
 
             if trailing_pad > 0:
-                f.write(
-                    f"\n    .space 0x{trailing_pad:X}  /* file-alignment padding */\n"
-                )
+                # In exact_encoding mode preserve the actual padding
+                # bytes — MSVC linkers fill .text tail with 0xCC, not
+                # zero. `.space` would zero them.
+                if exact:
+                    pad_bytes = data[decode_len : decode_len + trailing_pad]
+                    hexed = ", ".join(f"0x{b:02X}" for b in pad_bytes)
+                    f.write(
+                        f"\n    .byte {hexed}  /* {trailing_pad} bytes file-alignment padding */\n"
+                    )
+                else:
+                    f.write(
+                        f"\n    .space 0x{trailing_pad:X}  /* file-alignment padding */\n"
+                    )
 
         self.log(f"Wrote {self.name} to {out_path}")
 
