@@ -364,6 +364,10 @@ class Win32SegText(CommonSegment):
             if s is None or s.raw_size == 0:
                 return None
             offset_in_section = (va - pe.image_base) - s.virtual_address
+            # Reject VAs in the section's virtual-only tail — those have no
+            # backing bytes; reading would step into the next section.
+            if offset_in_section >= s.raw_size:
+                return None
             file_off = s.raw_pointer + offset_in_section
             if file_off >= len(rom_bytes):
                 return None
