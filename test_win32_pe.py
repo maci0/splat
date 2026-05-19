@@ -2163,6 +2163,25 @@ class CreateConfigAllForwardersTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class Win32MachineTypeTableTest(unittest.TestCase):
+    def test_machine_types_cover_arch_id_landscape(self):
+        from src.splat.segtypes.win32.header import _MACHINE_TYPES
+
+        # x86/x86_64 — the ones splat actually disassembles.
+        self.assertEqual(_MACHINE_TYPES[0x014C], "i386")
+        self.assertEqual(_MACHINE_TYPES[0x8664], "amd64")
+        # ARM family — splat rejects but the header dump should still
+        # name them so the user understands why.
+        self.assertEqual(_MACHINE_TYPES[0xAA64], "ARM64")
+        self.assertEqual(_MACHINE_TYPES[0x01C4], "ARMNT (Thumb-2)")
+        # Modern architectures (RISC-V, LoongArch) for forward-compat.
+        self.assertEqual(_MACHINE_TYPES[0x5064], "RISC-V 64-bit")
+        self.assertEqual(_MACHINE_TYPES[0x6264], "LoongArch 64-bit")
+        # Vintage architectures occasionally seen in CE / NT-RISC builds.
+        self.assertEqual(_MACHINE_TYPES[0x0184], "Alpha AXP")
+        self.assertEqual(_MACHINE_TYPES[0x0200], "Itanium (IA-64)")
+
+
 class ParsePEFarPeOffsetTest(unittest.TestCase):
     def test_e_lfanew_pointing_past_file_end_rejected(self):
         """A fuzzed MZ header with e_lfanew = 0xFFFFFFFF (or any value

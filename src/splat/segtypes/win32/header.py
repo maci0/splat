@@ -18,6 +18,34 @@ from ..common.header import CommonSegHeader
 from ...platforms import win32 as win32_platform
 
 
+_MACHINE_TYPES = {
+    0x014C: "i386",
+    0x0162: "MIPS R3000 LE",
+    0x0166: "MIPS R4000 LE",
+    0x0168: "MIPS R10000",
+    0x0184: "Alpha AXP",
+    0x01C0: "ARM (legacy CE)",
+    0x01C2: "ARM Thumb",
+    0x01C4: "ARMNT (Thumb-2)",
+    0x01F0: "PowerPC LE",
+    0x01F1: "PowerPC w/ FP",
+    0x0200: "Itanium (IA-64)",
+    0x0266: "MIPS16",
+    0x0366: "MIPSFPU",
+    0x0466: "MIPSFPU16",
+    0x0EBC: "EFI byte code",
+    0x5032: "RISC-V 32-bit",
+    0x5064: "RISC-V 64-bit",
+    0x5128: "RISC-V 128-bit",
+    0x6232: "LoongArch 32-bit",
+    0x6264: "LoongArch 64-bit",
+    0x8664: "amd64",
+    0x9041: "Mitsubishi M32R LE",
+    0xAA64: "ARM64",
+    0xC0EE: "CLR/CEE",
+}
+
+
 _SUBSYSTEMS = {
     0: "UNKNOWN",
     1: "NATIVE",
@@ -271,8 +299,11 @@ class Win32SegHeader(CommonSegHeader):
         out: List[str] = []
         out.append("/* ============================================================")
         out.append(" * PE / COFF summary (decoded from the bytes below)")
-        out.append(f" *   Machine:           0x{pe.machine:04X}"
-                   + (" (i386)" if pe.machine == 0x014C else " (amd64)" if pe.machine == 0x8664 else ""))
+        machine_name = _MACHINE_TYPES.get(pe.machine)
+        out.append(
+            f" *   Machine:           0x{pe.machine:04X}"
+            + (f" ({machine_name})" if machine_name else "")
+        )
         base_width = 16 if pe.is_pe32_plus else 8
         out.append(f" *   ImageBase:         0x{pe.image_base:0{base_width}X}")
         if pe.entry_point_rva:
