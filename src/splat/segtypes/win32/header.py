@@ -370,6 +370,12 @@ class Win32SegHeader(CommonSegHeader):
             )
             for dll, n in by_dll.items():
                 out.append(f" *     {dll}: {n}")
+        if 0 < len(pe.data_directories) < 16:
+            out.append(" *")
+            out.append(
+                f" *   NumberOfRvaAndSizes: {len(pe.data_directories)}"
+                "  (less than the standard 16 — older toolchain or hand-crafted PE)"
+            )
         if pe.bound_imports:
             out.append(" *")
             out.append(f" *   Bound imports ({len(pe.bound_imports)}):")
