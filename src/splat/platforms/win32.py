@@ -234,6 +234,22 @@ def parse_pe(data: bytes) -> PEInfo:
     if magic not in (0x10B, 0x20B):
         log.error(f"win32 target has unknown optional header magic 0x{magic:04X}")
 
+    # Cross-validate Machine vs Optional Header magic: i386 / ARM32 are
+    # always PE32 (magic 0x10B); AMD64 / ARM64 are always PE32+ (magic
+    # 0x20B). A mismatch indicates a corrupt or fabricated PE.
+    _M32 = {MACHINE_I386, 0x01C4}
+    _M64 = {MACHINE_AMD64, 0xAA64}
+    if machine in _M64 and not is_pe32_plus:
+        log.error(
+            f"win32 target's Machine (0x{machine:04X}) is 64-bit but the "
+            f"optional header magic (0x{magic:04X}) says PE32 — corrupt PE"
+        )
+    if machine in _M32 and is_pe32_plus:
+        log.error(
+            f"win32 target's Machine (0x{machine:04X}) is 32-bit but the "
+            f"optional header magic (0x{magic:04X}) says PE32+ — corrupt PE"
+        )
+
     # Reject truncated optional headers: PE32 needs 96 bytes (standard +
     # windows-specific); PE32+ needs 112. Anything smaller can't carry the
     # data-directory offsets we expect.
