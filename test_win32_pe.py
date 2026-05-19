@@ -2921,6 +2921,50 @@ class CreateConfigYamlQuotedPathTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class Win32HeaderTruncatedOptionalHeaderTest(unittest.TestCase):
+    def test_truncated_optional_header_falls_back_to_byte_block(self):
+        """A malformed PE with SizeOfOptionalHeader smaller than the
+        standard 0xE0 layout used to emit zero-width
+        `.short ''`/`.long ''` directives that GAS rejects.
+        After truncation is detected the remainder is dumped as a raw
+        byte block once — subsequent emit_* calls return silently."""
+        from src.splat.segtypes.win32.header import Win32SegHeader
+
+        coff_off = 0x40 + 4
+        # Declare a runt optional header — fits Magic + linker bytes +
+        # SizeOfCode + SizeOfInitData (16 bytes total), then truncated
+        # mid-SizeOfUninitData. The bounds check fires there.
+        size_of_opt = 0x10
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+        )
+        opt_runt = bytearray(size_of_opt)
+        opt_runt[0:2] = struct.pack("<H", 0x010B)  # Magic = PE32
+        opt_runt[2] = 6  # MajorLinkerVersion
+        # Fields past offset 4 are unspecified zeros — that's the runt.
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt_runt) + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN
+
+        seg = object.__new__(Win32SegHeader)
+        # opt_off = DOS(0x40) + PE\0\0(4) + COFF(0x14) = 0x58
+        opt_off = 0x40 + 4 + 0x14
+        opt_end = opt_off + size_of_opt
+        lines = seg._dump_optional_header(bytes(buf), opt_off, opt_end)
+        # No empty `.short`/`.long` directives.
+        for ln in lines:
+            self.assertNotRegex(ln, r'\.(short|long|quad)\s+""\s*$')
+        # Truncation must short-circuit subsequent emits — fields past
+        # SizeOfUninitializedData (i.e. AddressOfEntryPoint onward)
+        # should NOT appear in output.
+        joined = "\n".join(lines)
+        self.assertNotIn("AddressOfEntryPoint", joined)
+        self.assertNotIn("ImageBase", joined)
+
+
 class Win32HeaderDataDirCountCapTest(unittest.TestCase):
     def test_oversize_num_dirs_in_header_dump_is_capped(self):
         """The structured header dump iterates NumberOfRvaAndSizes

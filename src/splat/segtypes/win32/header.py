@@ -488,17 +488,40 @@ class Win32SegHeader(CommonSegHeader):
         size_int = 8 if is_pe32_plus else 4
         size_typ = "quad" if is_pe32_plus else "long"
 
+        # Truncated optional headers — short-circuit if a field would
+        # overshoot. Some malformed PEs declare a SizeOfOptionalHeader
+        # smaller than the canonical layout; emit whatever fits as raw
+        # bytes (once) instead of producing zero-width `.short ""`
+        # directives that GAS would reject.
+        truncation_emitted = [False]
+
+        def _ensure_room(field_size: int, off: int, label: str) -> bool:
+            if off + field_size <= opt_end and off + field_size <= len(rom_bytes):
+                return True
+            if not truncation_emitted[0]:
+                tail = rom_bytes[off:min(opt_end, len(rom_bytes))]
+                if tail:
+                    out.append(self._byte_block(tail, f"truncated past {label}"))
+                truncation_emitted[0] = True
+            return False
+
         def emit_short(off: int, label: str) -> None:
+            if not _ensure_room(2, off, label):
+                return
             out.append(
                 self.get_line("short", self._le(rom_bytes[off : off + 2]), label)
             )
 
         def emit_long(off: int, label: str) -> None:
+            if not _ensure_room(4, off, label):
+                return
             out.append(
                 self.get_line("long", self._le(rom_bytes[off : off + 4]), label)
             )
 
         def emit_int(off: int, label: str) -> None:
+            if not _ensure_room(size_int, off, label):
+                return
             out.append(
                 self.get_line(
                     size_typ, self._le(rom_bytes[off : off + size_int]), label
