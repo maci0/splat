@@ -15,7 +15,14 @@ STRING_MIN_LEN = 4
 
 
 def _is_string_byte(b: int) -> bool:
-    return b == 0x09 or b == 0x0A or b == 0x0D or 0x20 <= b <= 0x7E
+    # ASCII control/printable subset OR Latin-1 Supplement printables.
+    # Mirrors the wide-string scanner; covers localised ANSI resources
+    # written in Western European code pages.
+    return (
+        b == 0x09 or b == 0x0A or b == 0x0D
+        or 0x20 <= b <= 0x7E
+        or 0xA0 <= b <= 0xFF
+    )
 
 
 def _escape_string(raw: bytes) -> str:
