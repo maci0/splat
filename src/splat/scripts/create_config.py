@@ -806,6 +806,10 @@ options:
         f"{len(pe.safe_seh_handlers)} SafeSEH handlers" if pe.safe_seh_handlers else None,
         f"{len(pe.cfg_function_rvas)} CFG targets" if pe.cfg_function_rvas else None,
         f"{len(pe.runtime_functions)} RUNTIME_FUNCTIONs" if pe.runtime_functions else None,
+        f"{len(pe.unwind_info)} unwind records" if pe.unwind_info else None,
+        f"{len(pe.coff_symbols)} COFF symbols" if pe.coff_symbols else None,
+        f".NET v{pe.clr_header.runtime_major}.{pe.clr_header.runtime_minor}"
+            if pe.clr_header else None,
     ]
     summary = ", ".join(p for p in parts if p)
     print(f"Detected: {summary}.")
