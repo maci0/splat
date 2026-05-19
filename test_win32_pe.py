@@ -1802,6 +1802,23 @@ class PEEdgeCasesTest(unittest.TestCase):
         self.assertIsNone(pe.va_to_file_offset(0x7FFFFFFF))
         self.assertIsNone(pe.rva_to_file_offset(0x7FFFFFFF))
 
+    def test_truncated_dos_header(self):
+        """File shorter than the 64-byte DOS header must be rejected
+        explicitly (not raise a struct.error in the parser)."""
+        with self.assertRaises(SystemExit):
+            win32_platform.parse_pe(b"MZ" + b"\x00" * 10)
+
+    def test_missing_pe_signature(self):
+        """An MZ header pointing at non-PE bytes must be rejected."""
+        # Valid DOS header pointing e_lfanew at 0x40, but the bytes there
+        # are not "PE\0\0".
+        dos = bytearray(64)
+        dos[0:2] = b"MZ"
+        dos[0x3C:0x40] = struct.pack("<I", 0x40)
+        blob = bytes(dos) + b"NE\x00\x00" + b"\x00" * 100
+        with self.assertRaises(SystemExit):
+            win32_platform.parse_pe(blob)
+
     def test_zero_sections(self):
         """Synthetic PE with NumberOfSections=0 — parser should accept
         and downstream rva_to_file_offset should return None for any
