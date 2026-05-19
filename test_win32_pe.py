@@ -2076,6 +2076,25 @@ class Win32SegtypeAliasTest(unittest.TestCase):
         self.assertEqual(Win32SegAsm.__bases__, (Win32SegText,))
 
 
+class Win32SubsystemNamesTest(unittest.TestCase):
+    def test_subsystem_table_coverage(self):
+        """Subsystem ID → name mapping must cover the common values
+        emitted by Windows linkers."""
+        from src.splat.segtypes.win32.header import _SUBSYSTEMS
+
+        expected = {
+            1: "NATIVE",
+            2: "WINDOWS_GUI",
+            3: "WINDOWS_CUI",
+            5: "OS2_CUI",
+            7: "POSIX_CUI",
+            10: "EFI_APPLICATION",
+            14: "XBOX",
+        }
+        for sid, name in expected.items():
+            self.assertEqual(_SUBSYSTEMS.get(sid), name, f"Subsystem {sid}")
+
+
 class Win32ResourceTypeNamesTest(unittest.TestCase):
     def test_standard_resource_type_names(self):
         """RESOURCE_TYPE_NAMES covers all standard Win32 resource IDs
