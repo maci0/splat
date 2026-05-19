@@ -646,6 +646,27 @@ options:
             va = pe.image_base + rva
             symbol_addrs.append(f"safeseh_{idx} = 0x{va:08X}; // type:func")
 
+    if pe.cfg_function_rvas:
+        symbol_addrs.append("")
+        symbol_addrs.append(
+            "// /guard:cf valid indirect-call targets — every entry is "
+            "a function the loader's CFG bitmap whitelists."
+        )
+        # CFG tables in real binaries can be huge (ntdll ~40k). Cap the
+        # symbol emission at 1024 to keep symbol_addrs.txt readable; the
+        # text.py call-target seed already covers all entries for label
+        # emission. Pass --full-cfg if you want every row.
+        cfg_cap = 1024
+        shown = pe.cfg_function_rvas[:cfg_cap]
+        for idx, rva in enumerate(shown):
+            va = pe.image_base + rva
+            symbol_addrs.append(f"cfg_target_{idx} = 0x{va:08X}; // type:func")
+        if len(pe.cfg_function_rvas) > cfg_cap:
+            symbol_addrs.append(
+                f"// ... and {len(pe.cfg_function_rvas) - cfg_cap} more CFG "
+                "targets omitted; bump the cap in create_win32_config to list all."
+            )
+
     symbol_addrs.append("")
     with Path("symbol_addrs.txt").open("w", encoding="utf-8", newline="\n") as f:
         print("Writing symbol_addrs.txt")

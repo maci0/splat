@@ -2629,6 +2629,59 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigCfgSymbolsTest(unittest.TestCase):
+    def test_cfg_function_rvas_emit_cfg_target_rows(self):
+        """A /guard:cf-enabled PE lists every valid indirect-call target
+        in the GuardCFFunctionTable. Promote each to a `cfg_target_N`
+        symbol so the disassembly references them by label."""
+        # PE32 with LoadConfig pointing to a small CFG function table.
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        # LoadConfig at +0x00 (size 0x60), CFG table at +0x70.
+        cfg_table_off = 0x70
+        cfg_table_va = IMAGE_BASE + rdata_rva + cfg_table_off
+        lc_size = 0x60
+        body = bytearray(0x100)
+        struct.pack_into("<I", body, 0, lc_size)
+        struct.pack_into("<I", body, 0x54, cfg_table_va)  # GuardCFFunctionTable
+        struct.pack_into("<I", body, 0x58, 3)              # GuardCFFunctionCount
+        struct.pack_into("<I", body, 0x5C, 0)              # GuardFlags = 0 (no extra bytes)
+        struct.pack_into("<III", body, cfg_table_off, 0x1000, 0x1010, 0x1020)
+
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x100, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x100},
+                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(0, 0)] * 10 + [(rdata_rva, lc_size)],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-cfg-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "cfg.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            txt = (tmpdir / "symbol_addrs.txt").read_text()
+            self.assertIn("cfg_target_0 = 0x", txt)
+            self.assertIn("cfg_target_1 = 0x", txt)
+            self.assertIn("cfg_target_2 = 0x", txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigTlsAndSafeSehSymbolsTest(unittest.TestCase):
     def test_tls_callbacks_and_safeseh_emit_symbol_addrs_rows(self):
         """The PE optional header's TLS directory enumerates callbacks
