@@ -298,9 +298,9 @@ class PEInfo:
     tls_callback_vas: List[int] = field(default_factory=list)
     # Decoded IMAGE_UNWIND_INFO records, keyed by unwind RVA.
     # PE32+ only; remains empty for PE32 binaries.
-    unwind_info: "Dict[int, UnwindInfo]" = field(default_factory=dict)
+    unwind_info: Dict[int, UnwindInfo] = field(default_factory=dict)
     # Decoded IMAGE_COR20_HEADER when data dir 14 is populated (.NET).
-    clr_header: "Optional[CLRHeader]" = None
+    clr_header: Optional[CLRHeader] = None
     # Resources enumerated from data directory 2 (.rsrc).
     resources: List[PEResource] = field(default_factory=list)
     # Decoded VS_VERSIONINFO key/value pairs (CompanyName, FileVersion,
@@ -373,7 +373,7 @@ def compute_iat_labels(pe: PEInfo) -> Dict[int, str]:
     disassembly references resolve to the same identifiers."""
     out: Dict[int, str] = {}
 
-    def populate(items: "List[PEImport]", prefix: str) -> None:
+    def populate(items: List[PEImport], prefix: str) -> None:
         seen: Set[str] = set()
         for imp in items:
             slot_va = pe.image_base + imp.iat_rva
