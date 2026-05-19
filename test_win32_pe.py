@@ -2901,6 +2901,60 @@ class CreateConfigTlsAndSafeSehSymbolsTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class CreateConfigNoFileBackedSectionsTest(unittest.TestCase):
+    def test_pe_with_only_bss_sections_still_produces_valid_yaml(self):
+        """A PE with no file-backed sections (pure BSS, e.g. some
+        kernel-mode stubs or hand-crafted images) must still produce a
+        valid splat YAML — the header segment + a footer offset for
+        the file's total size is the only well-formed minimum."""
+        # Build PE with header + a single BSS section (no raw bytes).
+        sec_bss = struct.pack(
+            "<8sIIIIIIHHI",
+            b".bss\x00\x00\x00\x00",
+            0x100,    # VirtualSize
+            0x1000,   # VirtualAddress
+            0,        # SizeOfRawData
+            0,        # PointerToRawData
+            0, 0, 0, 0,
+            0xC0000080,  # READ | WRITE | UNINITIALIZED_DATA
+        )
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, 0xE0,
+            0x010F | 0x2000,  # IMAGE_FILE_DLL
+        )
+        opt = _opt_header_pe32(entry_rva=0)
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec_bss
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header)
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+        import yaml
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-bssonly-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            dll = tmpdir / "bssonly.dll"
+            dll.write_bytes(bytes(buf))
+            create_win32_config(dll, bytes(buf))
+            doc = yaml.safe_load((tmpdir / "bssonly.dll.yaml").read_text())
+            # Should have a header segment and the BSS segment.
+            segs = doc["segments"]
+            self.assertTrue(any(
+                isinstance(s, dict) and s.get("type") == "header" for s in segs
+            ))
+            self.assertTrue(any(
+                isinstance(s, dict) and s.get("type") == "bss" for s in segs
+            ))
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigPhantomSectionTest(unittest.TestCase):
     def test_section_with_zero_raw_pointer_treated_as_bss(self):
         """A section whose SizeOfRawData > 0 but PointerToRawData == 0
