@@ -58,6 +58,14 @@ SCN_MEM_EXECUTE = 0x20000000
 
 @dataclass
 class PESection:
+    """One IMAGE_SECTION_HEADER entry from the PE section table.
+
+    `virtual_address` is the section's RVA — its load-time location
+    relative to ImageBase. `raw_pointer` is the on-disk offset. The
+    section spans [virtual_address, virtual_address + virtual_size)
+    in memory and [raw_pointer, raw_pointer + raw_size) in the file;
+    when virtual_size > raw_size the loader zero-fills the tail."""
+
     name: str
     virtual_size: int
     virtual_address: int  # RVA
@@ -88,10 +96,18 @@ class PESection:
 
 @dataclass
 class PEExport:
-    name: Optional[str]  # None for ordinal-only exports
+    """One entry in the export table (data dir 0).
+
+    `name` is None for ordinal-only exports (the DLL exposes the
+    function by number rather than symbolic name). `rva` is the
+    in-image RVA the export points at — UNLESS `forwarder` is set,
+    in which case the export forwards to another DLL and rva is
+    interpreted by the loader as a pointer to the forwarder string."""
+
+    name: Optional[str]
     ordinal: int
     rva: int
-    forwarder: Optional[str] = None  # set when the export points outside the image
+    forwarder: Optional[str] = None
 
     @property
     def va_for(self):
@@ -100,10 +116,20 @@ class PEExport:
 
 @dataclass
 class PEImport:
+    """One imported symbol — either eager (data dir 1, IMAGE_IMPORT_*)
+    or delay-loaded (data dir 13, IMAGE_DELAYLOAD_*).
+
+    `dll` is the import source's DLL filename. Exactly one of `name`
+    or `ordinal` is set: `name` for the typical hint/name import,
+    `ordinal` (`name` is None) when the import is by ordinal index.
+    `iat_rva` is the in-image RVA of the IAT slot the loader writes
+    the resolved function pointer into — call sites read through it
+    via `call qword ptr [<iat_va>]` style indirect calls."""
+
     dll: str
-    name: Optional[str]  # None for ordinal-only imports
-    ordinal: Optional[int]  # set when name is None
-    iat_rva: int  # IAT slot RVA — what `call dword ptr [<iat_va>]` reads
+    name: Optional[str]
+    ordinal: Optional[int]
+    iat_rva: int
 
 
 @dataclass
@@ -137,6 +163,16 @@ class PEResource:
 
 @dataclass
 class PEInfo:
+    """Result of parsing a Win32 PE32 / PE32+ image.
+
+    Carries every field splat needs from the DOS stub, COFF file
+    header, optional header, section table, and all 16 data
+    directories. Populated by `parse_pe(target_bytes)` and exposed
+    via the module-level `info` global so segtypes and the
+    disassembler can consult it without threading it through every
+    call. Empty / zero defaults mean 'directory not present' — there
+    is no separate Optional[List] for directory-derived fields."""
+
     machine: int = 0
     num_sections: int = 0
     timestamp: int = 0
