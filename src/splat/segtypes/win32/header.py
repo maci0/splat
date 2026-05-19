@@ -571,10 +571,14 @@ class Win32SegHeader(CommonSegHeader):
         emit_long(o, "NumberOfRvaAndSizes")
         o += 4
 
-        # Data directories — each is {VirtualAddress, Size}.
+        # Data directories — each is {VirtualAddress, Size}. PE spec caps
+        # the canonical count at 16; honour but tolerate a slightly
+        # higher declared count (loaders accept up to whatever fits in
+        # the optional header). Cap iteration at 256 to bound malformed
+        # inputs that claim millions of directory entries.
         if num_dirs > 0:
             out.append("/* Data directories */")
-        for i in range(num_dirs):
+        for i in range(min(num_dirs, 256)):
             if o + 8 > opt_end:
                 break
             label = (

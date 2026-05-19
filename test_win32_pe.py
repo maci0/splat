@@ -2551,6 +2551,43 @@ class Win32SegtypeAliasTest(unittest.TestCase):
         self.assertEqual(Win32SegAsm.__bases__, (Win32SegText,))
 
 
+class Win32HeaderDataDirCountCapTest(unittest.TestCase):
+    def test_oversize_num_dirs_in_header_dump_is_capped(self):
+        """The structured header dump iterates NumberOfRvaAndSizes
+        directory entries. A fuzzed value (e.g. 0xFFFFFFFF) must not
+        trigger a 4-billion-iteration loop in `_dump_optional_header`.
+        Real iteration is bounded by both the declared count cap (256)
+        and the per-iteration opt_end check."""
+        from src.splat.segtypes.win32.header import Win32SegHeader
+
+        # Minimal PE32 buffer where SizeOfOptionalHeader covers exactly
+        # the standard header + 16 data directories. Force NumberOfRvaAndSizes
+        # to 0xFFFFFFFF.
+        coff_off = 0x40 + 4
+        size_of_opt = 0xE0
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+        )
+        opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
+        # NumberOfRvaAndSizes field at offset 92.
+        struct.pack_into("<I", opt, 92, 0xFFFFFFFF)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN
+
+        seg = object.__new__(Win32SegHeader)
+        opt_off = 0x40 + 4 + 0x14  # DOS+PE+sig+COFF header
+        opt_end = opt_off + size_of_opt
+        # No exception, no infinite loop. Returns within milliseconds.
+        lines = seg._dump_optional_header(bytes(buf), opt_off, opt_end)
+        # Should have emitted at most opt_end // 8 directory entries,
+        # well below 256, and definitely below 4 billion.
+        self.assertLess(len(lines), 256)
+
+
 class Win32HeaderWidthTest(unittest.TestCase):
     def test_pe32_plus_imagebase_padded_to_16_hex(self):
         """For PE32+ the ImageBase is 64-bit (e.g. 0x140000000 — 9 hex
