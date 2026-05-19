@@ -1487,7 +1487,8 @@ def parse_unwind_info(data: bytes, pe: PEInfo) -> None:
 
         chained_rva: Optional[int] = None
         if flags & 0x04:  # UNW_FLAG_CHAININFO
-            chain_off = _align4(codes_end - 0) + 0
+            # The chained RUNTIME_FUNCTION starts at the byte
+            # immediately after the unwind codes, aligned to DWORD.
             chain_off = (codes_end + 3) & ~3
             if chain_off + 12 <= len(data):
                 chained_rva = struct.unpack_from("<I", data, chain_off)[0]
