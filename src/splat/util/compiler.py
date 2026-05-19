@@ -64,6 +64,22 @@ PSYQ = Compiler(
 MWCCPS2 = Compiler("MWCCPS2", uses_include_asm=False)
 EEGCC = Compiler("EEGCC", align_on_branch_labels=True)
 
+# Win32 / MSVC 6.0 (cl.exe 12.00). Emits MASM-style asm; `PROC`/`ENDP` are the
+# function delimiters, but for splat purposes we keep GAS-style labels so the
+# generated `.s` files can be reassembled with a portable toolchain.
+MSVC6 = Compiler(
+    "MSVC6",
+    asm_function_macro=".globl",
+    asm_function_alt_macro=".globl",
+    asm_jtbl_label_macro=".globl",
+    asm_data_macro=".globl",
+    asm_end_label="",
+    asm_data_end_label="",
+    asm_nonmatching_label_macro="",
+    asm_emit_size_directive=False,
+    uses_include_asm=False,
+)
+
 compiler_for_name: Dict[str, Compiler] = {
     x.name: x
     for x in [
@@ -75,6 +91,7 @@ compiler_for_name: Dict[str, Compiler] = {
         PSYQ,
         MWCCPS2,
         EEGCC,
+        MSVC6,
     ]
 }
 

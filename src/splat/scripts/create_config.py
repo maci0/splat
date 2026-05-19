@@ -36,6 +36,13 @@ def main(file_path: Path, objcopy: Optional[str]):
         do_elf(file_path, file_bytes, objcopy)
         return
 
+    # Check for Win32 PE
+    if file_bytes[0:2] == b"MZ" and len(file_bytes) >= 0x40:
+        pe_off = int.from_bytes(file_bytes[0x3C:0x40], "little")
+        if pe_off + 4 <= len(file_bytes) and file_bytes[pe_off : pe_off + 4] == b"PE\x00\x00":
+            create_win32_config(file_path, file_bytes)
+            return
+
     log.error(f"create_config does not support the file format of '{file_path}'")
 
 
@@ -374,6 +381,195 @@ segments:
     file_presets.write_all_files()
 
 
+def create_win32_config(exe_path: Path, exe_bytes: bytes):
+    from ..platforms.win32 import parse_pe, SCN_CNT_CODE, SCN_CNT_UNINITIALIZED_DATA, SCN_MEM_EXECUTE, SCN_MEM_WRITE
+
+    pe = parse_pe(exe_bytes)
+    basename = exe_path.name.replace(" ", "").lower()
+    cleaned_basename = remove_invalid_path_characters(basename)
+
+    sha1 = hashlib.sha1(exe_bytes).hexdigest()
+
+    header = f"""\
+# name: {exe_path.name}
+sha1: {sha1}
+options:
+  basename: {basename}
+  target_path: {exe_path}
+  base_path: .
+  platform: win32
+  compiler: MSVC6
+
+  # asm_path: asm
+  # src_path: src
+  # build_path: build
+
+  ld_script_path: {cleaned_basename}.ld
+  ld_dependencies: True
+
+  o_as_suffix: True
+
+  section_order: [".text", ".rdata", ".data", ".rodata", ".bss"]
+
+  symbol_addrs_path:
+    - symbol_addrs.txt
+
+  # undefined_funcs_auto_path: undefined_funcs_auto.txt
+  # undefined_syms_auto_path: undefined_syms_auto.txt
+
+  extensions_path: tools/splat_ext
+
+  string_encoding: ASCII
+  data_string_encoding: ASCII
+"""
+
+    # First raw byte of the first non-NOLOAD section delimits the header.
+    first_raw = min(
+        (s.raw_pointer for s in pe.sections if s.raw_size > 0),
+        default=pe.size_of_headers,
+    )
+
+    segments = "\nsegments:\n"
+    segments += f"""\
+  - name: header
+    type: header
+    start: 0x0
+
+"""
+
+    # Order sections by file position so segments stay monotonically
+    # increasing in rom_start (splat requires this).
+    file_sections = sorted(
+        (s for s in pe.sections if s.raw_size > 0),
+        key=lambda s: s.raw_pointer,
+    )
+    bss_sections = [
+        s
+        for s in pe.sections
+        if s.raw_size == 0
+        and (s.characteristics & SCN_CNT_UNINITIALIZED_DATA)
+    ]
+
+    for s in file_sections:
+        # Derive a sensible subsegment type from the section flags.
+        if s.characteristics & (SCN_CNT_CODE | SCN_MEM_EXECUTE):
+            sub_type = "text"
+        elif s.characteristics & SCN_MEM_WRITE:
+            sub_type = "data"
+        else:
+            sub_type = "rodata"
+
+        safe_name = remove_invalid_path_characters(s.name.lstrip(".") or "section")
+        vram = pe.image_base + s.virtual_address
+        segments += f"""\
+  - name: {safe_name}
+    type: code
+    start: 0x{s.raw_pointer:X}
+    vram: 0x{vram:08X}
+    subsegments:
+      - [0x{s.raw_pointer:X}, {sub_type}, {safe_name}_main]
+
+"""
+
+        # Virtual-only tail: file-backed section that extends in memory
+        # past its raw bytes (MSVC zero-init globals). Model as a BSS
+        # segment so the linker layout matches the runtime image.
+        if s.virtual_size > s.raw_size and s.characteristics & SCN_MEM_WRITE:
+            tail_vram = pe.image_base + s.virtual_address + s.raw_size
+            tail_size = s.virtual_size - s.raw_size
+            segments += f"""\
+  - {{ name: {safe_name}_bss, type: bss, vram: 0x{tail_vram:08X}, bss_size: 0x{tail_size:X} }}
+
+"""
+
+    for s in bss_sections:
+        safe_name = remove_invalid_path_characters(s.name.lstrip(".") or "bss")
+        vram = pe.image_base + s.virtual_address
+        size = max(s.virtual_size, 0)
+        segments += f"""\
+  - {{ name: {safe_name}, type: bss, vram: 0x{vram:08X}, bss_size: 0x{size:X} }}
+
+"""
+
+    segments += f"  - [0x{len(exe_bytes):X}]\n"
+
+    out_file = Path(f"{cleaned_basename}.yaml")
+    with out_file.open("w", encoding="utf-8", newline="\n") as f:
+        print(f"Writing config to {out_file}")
+        f.write(header)
+        f.write(segments)
+
+    conf.load([out_file])
+    file_presets.write_all_files()
+
+    # Stash the entry point and any exported function as known symbols so
+    # the disassembly labels them.
+    symbol_addrs = [
+        f"entrypoint = 0x{pe.entry_point_va:08X}; // type:func",
+    ]
+    if pe.exports:
+        symbol_addrs.append("")
+        symbol_addrs.append(f"// Exports from {pe.export_dll_name or exe_path.name}")
+        for exp in pe.exports:
+            if exp.forwarder is not None:
+                continue
+            name = exp.name or f"export_{exp.ordinal}"
+            # Sanitize: some DLLs export C++ mangled names with characters
+            # that GAS can't ingest as labels.
+            safe = "".join(c if c.isalnum() or c == "_" else "_" for c in name)
+            va = pe.image_base + exp.rva
+            trailing = f"// type:func -- ordinal {exp.ordinal}"
+            if exp.name and safe != exp.name:
+                trailing += f" (original {exp.name})"
+            symbol_addrs.append(f"{safe} = 0x{va:08X}; {trailing}")
+        forwarders = [e for e in pe.exports if e.forwarder is not None]
+        if forwarders:
+            symbol_addrs.append("")
+            symbol_addrs.append("// Forwarded exports (live outside this DLL)")
+            for exp in forwarders:
+                name = exp.name or f"export_{exp.ordinal}"
+                safe = "".join(
+                    c if c.isalnum() or c == "_" else "_" for c in name
+                )
+                # No real VA — record as a comment so users see the mapping.
+                symbol_addrs.append(
+                    f"// {safe}  ->  {exp.forwarder}  (ordinal {exp.ordinal})"
+                )
+
+    if pe.imports:
+        symbol_addrs.append("")
+        symbol_addrs.append("// IAT slots (each `call dword ptr [<va>]` reaches one of these)")
+        for imp in pe.imports:
+            label = imp.name or f"ordinal_{imp.ordinal}"
+            safe = "".join(c if c.isalnum() or c == "_" else "_" for c in label)
+            full = f"imp_{imp.dll.replace('.', '_')}_{safe}"
+            slot_va = pe.image_base + imp.iat_rva
+            trailing = f"// type:u32 -- import from {imp.dll}"
+            if imp.ordinal is not None:
+                trailing += f" ordinal {imp.ordinal}"
+            symbol_addrs.append(f"{full} = 0x{slot_va:08X}; {trailing}")
+
+    if pe.delay_imports:
+        symbol_addrs.append("")
+        symbol_addrs.append("// Delay-load IAT slots (resolved on first call via __delayLoadHelper2)")
+        for imp in pe.delay_imports:
+            label = imp.name or f"ordinal_{imp.ordinal}"
+            safe = "".join(c if c.isalnum() or c == "_" else "_" for c in label)
+            full = f"dimp_{imp.dll.replace('.', '_')}_{safe}"
+            slot_va = pe.image_base + imp.iat_rva
+            trailing = f"// type:u32 -- delay-loaded import from {imp.dll}"
+            if imp.ordinal is not None:
+                trailing += f" ordinal {imp.ordinal}"
+            symbol_addrs.append(f"{full} = 0x{slot_va:08X}; {trailing}")
+    symbol_addrs.append("")
+    with Path("symbol_addrs.txt").open("w", encoding="utf-8", newline="\n") as f:
+        print("Writing symbol_addrs.txt")
+        f.write(
+            "// Visit https://github.com/ethteck/splat/wiki/Adding-Symbols for documentation about this file\n"
+        )
+        f.write("\n".join(symbol_addrs))
+
+
 def do_elf(elf_path: Path, elf_bytes: bytes, objcopy: Optional[str]):
     elf = ps2elfinfo.Ps2Elf.get_info(elf_path, elf_bytes)
     if elf is None:
@@ -568,7 +764,7 @@ def run_objcopy(objcopy_name: str, elf_path: str, rom: str) -> list[str]:
 def add_arguments_to_parser(parser: argparse.ArgumentParser):
     parser.add_argument(
         "file",
-        help="Path to a .z64/.n64 ROM, PSX executable or PS2 ELF",
+        help="Path to a .z64/.n64 ROM, PSX executable, PS2 ELF, or Win32 PE",
         type=Path,
     )
     parser.add_argument(
@@ -582,7 +778,9 @@ def process_arguments(args: argparse.Namespace):
     main(args.file, args.objcopy)
 
 
-script_description = "Create a splat config from an N64 ROM or PSX executable."
+script_description = (
+    "Create a splat config from an N64 ROM, PSX executable, PS2 ELF, or Win32 PE."
+)
 
 
 def add_subparser(subparser: argparse._SubParsersAction):

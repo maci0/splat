@@ -2,7 +2,9 @@
 
 import difflib
 import filecmp
+import importlib.util
 import io
+import shutil
 from pathlib import Path
 import spimdisasm
 import unittest
@@ -59,6 +61,131 @@ class Testing(unittest.TestCase):
 
         for sub_dcmp in dcmp.subdirs.values():
             self.get_right_only_files(sub_dcmp, out)
+
+    def test_win32_create_config(self):
+        """Smoke-test the auto-generated win32 splat config."""
+        from src.splat.scripts.create_config import create_win32_config
+
+        spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False
+
+        fixture_dir = Path("test/win32_app")
+        gen_spec = importlib.util.spec_from_file_location(
+            "_win32_generate2", fixture_dir / "generate.py"
+        )
+        gen = importlib.util.module_from_spec(gen_spec)
+        gen_spec.loader.exec_module(gen)
+        gen.main()
+
+        exe_path = fixture_dir / "win32_app.exe"
+        exe_bytes = exe_path.read_bytes()
+
+        tmp_dir = fixture_dir / "_autogen"
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir)
+        tmp_dir.mkdir()
+
+        cwd = Path.cwd()
+        try:
+            import os
+
+            # create_win32_config writes outputs relative to CWD.
+            os.chdir(tmp_dir)
+            create_win32_config(Path("..") / exe_path.name, exe_bytes)
+        finally:
+            os.chdir(cwd)
+
+        yaml_files = list(tmp_dir.glob("*.yaml"))
+        self.assertTrue(yaml_files, "autogen produced no YAML")
+        sym_addrs = tmp_dir / "symbol_addrs.txt"
+        self.assertTrue(sym_addrs.exists(), "autogen produced no symbol_addrs.txt")
+        self.assertIn("entrypoint", sym_addrs.read_text(encoding="utf-8"))
+
+        shutil.rmtree(tmp_dir)
+
+    def test_win32_app64(self):
+        """Smoke test the PE32+ (x86_64) code path: generate the binary,
+        split it, assert the entry disasm and the PE bitness."""
+        spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False
+
+        fixture_dir = Path("test/win32_app64")
+        gen_spec = importlib.util.spec_from_file_location(
+            "_win32_generate64", fixture_dir / "generate.py"
+        )
+        gen = importlib.util.module_from_spec(gen_spec)
+        gen_spec.loader.exec_module(gen)
+        gen.main()
+
+        split_dir = fixture_dir / "split"
+        if split_dir.exists():
+            shutil.rmtree(split_dir)
+
+        from src.splat.scripts.split import main as splat_main
+
+        splat_main([fixture_dir / "splat.yaml"], None, False)
+
+        text = (split_dir / "asm/main_text.s").read_text(encoding="utf-8")
+        # x86_64 mode: the entry should decode to `mov eax, 0x2a; ret`.
+        self.assertIn("mov eax, 0x2a", text)
+        self.assertIn("ret", text)
+        # Entrypoint VA encodes the 64-bit ImageBase.
+        self.assertIn("0x140001000", text)
+        # RIP-relative load should be substituted with the .rdata label.
+        self.assertIn("[D_140002000]", text)
+
+        # Round-trip: the output must assemble cleanly with GAS.
+        self._assert_assembles(split_dir / "asm/main_text.s", "--64")
+
+    def _assert_assembles(self, asm_path: Path, mode_flag: str) -> None:
+        """Invoke `as` to assemble the given file. Skip silently if `as`
+        isn't available; fail loudly if it is and rejects the file."""
+        import shutil as _shutil
+        import subprocess as _sub
+
+        if _shutil.which("as") is None:
+            return
+        out = _sub.run(
+            ["as", mode_flag, str(asm_path), "-o", "/dev/null"],
+            capture_output=True,
+        )
+        self.assertEqual(
+            out.returncode,
+            0,
+            f"`as` rejected {asm_path}:\n{out.stderr.decode(errors='replace')}",
+        )
+
+    def test_win32_app(self):
+        """Run splat against the synthetic PE32 fixture and check the
+        output. Generates the binary on the fly so the test is hermetic
+        and doesn't require committing a binary executable."""
+        spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False
+
+        fixture_dir = Path("test/win32_app")
+        gen_spec = importlib.util.spec_from_file_location(
+            "_win32_generate", fixture_dir / "generate.py"
+        )
+        gen = importlib.util.module_from_spec(gen_spec)
+        gen_spec.loader.exec_module(gen)
+        gen.main()
+
+        split_dir = fixture_dir / "split"
+        if split_dir.exists():
+            shutil.rmtree(split_dir)
+
+        from src.splat.scripts.split import main as splat_main
+
+        splat_main([fixture_dir / "splat.yaml"], None, False)
+
+        for name in ("asm/header.s", "asm/main_text.s", "win32_app.ld"):
+            self.assertTrue(
+                (split_dir / name).exists(), f"win32 split missing {name}"
+            )
+
+        text = (split_dir / "asm/main_text.s").read_text(encoding="utf-8")
+        for needle in ("push ebp", "mov ebp, esp", "mov eax, 0x2a", "ret"):
+            self.assertIn(needle, text)
+
+        # Round-trip: the output must assemble cleanly with GAS.
+        self._assert_assembles(split_dir / "asm/main_text.s", "--32")
 
     def test_basic_app(self):
         spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False

@@ -251,6 +251,10 @@ def write_assembly_inc_files():
         gas = macros_inc.replace("\\label", '"\\label"').replace(
             '"\\label"\\().NON_MATCHING', '"\\label\\().NON_MATCHING"'
         )
+    elif options.opts.platform == "win32":
+        # win32 / x86 doesn't share the MIPS macro conventions; emit the
+        # base macros_inc so generated .s files have something to include.
+        gas = macros_inc
     elif not options.opts.is_unsupported_platform:
         log.error(f"Unknown platform '{options.opts.platform}'")
     else:

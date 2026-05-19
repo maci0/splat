@@ -388,7 +388,9 @@ def _parse_yaml(
     if is_unsupported_platform:
         platform = p.parse_opt("platform", str)
     else:
-        platform = p.parse_opt_within("platform", str, ["n64", "psx", "ps2", "psp"])
+        platform = p.parse_opt_within(
+            "platform", str, ["n64", "psx", "ps2", "psp", "win32"]
+        )
 
     comp = compiler.for_name(p.parse_opt("compiler", str, "IDO"))
 
@@ -412,7 +414,7 @@ def _parse_yaml(
             "endianness",
             str,
             ["big", "little"],
-            "little" if platform in ["psx", "ps2", "psp"] else "big",
+            "little" if platform in ["psx", "ps2", "psp", "win32"] else "big",
         )
 
         if endianness == "big":
@@ -442,7 +444,7 @@ def _parse_yaml(
         default_ld_bss_is_noload = False
 
     default_add_set_gp_64 = True
-    if platform in ("psx", "ps2"):
+    if platform in ("psx", "ps2", "win32"):
         default_add_set_gp_64 = False
 
     ret = SplatOpts(
