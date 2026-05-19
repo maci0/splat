@@ -539,6 +539,55 @@ class PEDebugTest(unittest.TestCase):
 
 
 class PETlsTest(unittest.TestCase):
+    def test_pe32_plus_tls_callbacks(self):
+        """PE32+ IMAGE_TLS_DIRECTORY puts AddressOfCallBacks at +0x18 as
+        an 8-byte VA, and each callback slot is a QWORD. Verify the
+        64-bit code path (the other test covers the 4-byte PE32 form)."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+
+        callbacks_va = 0x140000000 + rdata_rva + 0x60
+        cb_a = 0x140000000 + 0x1000
+        cb_b = 0x140000000 + 0x1100
+
+        body = bytearray(0x200)
+        # IMAGE_TLS_DIRECTORY64 layout: 5 QWORDs + 2 DWORDs.
+        # AddressOfCallBacks is the 4th QWORD at offset 0x18.
+        struct.pack_into("<Q", body, 0x18, callbacks_va)
+        # Callbacks array (3 QWORDs: two callbacks + NUL).
+        struct.pack_into("<QQQ", body, 0x60, cb_a, cb_b, 0)
+
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x200,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0), (0, 0), (0, 0),
+                (rdata_rva, 0x28),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertTrue(pe.is_pe32_plus)
+        self.assertEqual(pe.tls_callback_vas, [cb_a, cb_b])
+
     def test_tls_callbacks(self):
         rdata_rva = 0x2000
         rdata_rptr = FILE_ALIGN * 2
