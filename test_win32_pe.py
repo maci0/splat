@@ -1768,6 +1768,25 @@ class Win32ExactEncodingInheritanceTest(unittest.TestCase):
             )  # subsegment value wins over parent
 
 
+class CreateConfigRejectionTest(unittest.TestCase):
+    def test_non_pe_file_falls_through_to_error(self):
+        """create_config.main() with a file that's neither N64 / PSX /
+        ELF / PE bytes must log.error → SystemExit, not crash silently
+        partway through."""
+        import tempfile
+        from src.splat.scripts.create_config import main as create_config_main
+        from pathlib import Path as _P
+
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+            f.write(b"random non-PE garbage data, neither MZ nor ELF")
+            tmp = _P(f.name)
+        try:
+            with self.assertRaises(SystemExit):
+                create_config_main(tmp, None)
+        finally:
+            tmp.unlink()
+
+
 class Win32SegtypeAliasTest(unittest.TestCase):
     def test_asm_resolves_to_text(self):
         """`type: asm` in YAML must resolve to Win32SegAsm which inherits
