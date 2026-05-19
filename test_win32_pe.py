@@ -2551,6 +2551,71 @@ class Win32SegtypeAliasTest(unittest.TestCase):
         self.assertEqual(Win32SegAsm.__bases__, (Win32SegText,))
 
 
+class Win32SanitizeLabelHelpersTest(unittest.TestCase):
+    def test_sanitize_label_passthrough_for_clean_id(self):
+        self.assertEqual(win32_platform.sanitize_label("CreateThread"), "CreateThread")
+
+    def test_sanitize_label_replaces_punctuation(self):
+        self.assertEqual(
+            win32_platform.sanitize_label("foo@bar-baz?"), "foo_bar_baz_"
+        )
+
+    def test_sanitize_label_prefixes_leading_digit(self):
+        self.assertEqual(win32_platform.sanitize_label("7zopen"), "_7zopen")
+
+    def test_sanitize_label_leaves_underscore_leading_alone(self):
+        self.assertEqual(win32_platform.sanitize_label("_main"), "_main")
+
+    def test_sanitize_label_empty_string(self):
+        self.assertEqual(win32_platform.sanitize_label(""), "")
+
+    def test_compute_iat_labels_collision_dedup(self):
+        """Two imports from the same DLL that sanitize to the same label
+        get the second occurrence suffixed with the slot RVA."""
+        pe = win32_platform.PEInfo(image_base=0x400000)
+        pe.imports.append(
+            win32_platform.PEImport(
+                dll="user32.dll", name="foo@x", ordinal=None, iat_rva=0x2000
+            )
+        )
+        pe.imports.append(
+            win32_platform.PEImport(
+                dll="user32.dll", name="foo$x", ordinal=None, iat_rva=0x2004
+            )
+        )
+        labels = win32_platform.compute_iat_labels(pe)
+        # Two distinct VAs, two distinct labels — first bare, second suffixed.
+        self.assertEqual(labels[0x400000 + 0x2000], "imp_user32_dll_foo_x")
+        self.assertEqual(
+            labels[0x400000 + 0x2004], "imp_user32_dll_foo_x__rva2004"
+        )
+
+    def test_compute_export_labels_reserves_seed_set(self):
+        """An export literally named 'entrypoint' must NOT clobber the
+        synthesized entry-point symbol — dedup adds the ordinal suffix."""
+        pe = win32_platform.PEInfo(image_base=0x10000000)
+        pe.exports.append(
+            win32_platform.PEExport(
+                name="entrypoint", ordinal=7, rva=0x1234, forwarder=None
+            )
+        )
+        labels = win32_platform.compute_export_labels(
+            pe, reserved={"entrypoint"}
+        )
+        self.assertEqual(labels[0x10000000 + 0x1234], "entrypoint__ord7")
+
+    def test_compute_export_labels_skips_forwarders(self):
+        pe = win32_platform.PEInfo(image_base=0x10000000)
+        pe.exports.append(
+            win32_platform.PEExport(
+                name="GoesElsewhere", ordinal=1, rva=0x100,
+                forwarder="OTHER.dll.DoThing",
+            )
+        )
+        labels = win32_platform.compute_export_labels(pe)
+        self.assertEqual(labels, {})
+
+
 class Win32HeaderDataDirCountCapTest(unittest.TestCase):
     def test_oversize_num_dirs_in_header_dump_is_capped(self):
         """The structured header dump iterates NumberOfRvaAndSizes
