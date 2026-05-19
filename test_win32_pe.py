@@ -2629,6 +2629,49 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigBinClassificationTest(unittest.TestCase):
+    def test_reloc_and_rsrc_sections_classified_as_bin(self):
+        """`.reloc` and `.rsrc` are structured loader-time data — their
+        bytes aren't meaningful as pointers / strings to disassembly.
+        Auto-config should mark them as opaque `bin` subsegments to
+        skip the string/pointer heuristics that would otherwise emit
+        misleading `.long`/`.asciz` directives over their content."""
+        body = b"\x90" * FILE_ALIGN
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": body},
+                {"name": b".rsrc", "vsize": 0x10, "vaddr": 0x2000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
+                 "chars": 0x40000040, "body": body},
+                {"name": b".reloc", "vsize": 0x10, "vaddr": 0x3000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 3,
+                 "chars": 0x42000040, "body": body},
+            ],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-bin-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "bn.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            yaml_txt = (tmpdir / "bn.exe.yaml").read_text()
+            self.assertIn(", bin, rsrc_main", yaml_txt)
+            self.assertIn(", bin, reloc_main", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigPdataDetectTest(unittest.TestCase):
     def test_pe32_plus_pdata_section_gets_pdata_subtype(self):
         """A PE32+ `.pdata` section should produce a `type: pdata`

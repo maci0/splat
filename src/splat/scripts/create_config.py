@@ -487,9 +487,13 @@ options:
     for s in file_sections:
         # Derive a sensible subsegment type. Special-case `.pdata` to
         # the dedicated Win32SegPdata so RUNTIME_FUNCTION rows render
-        # structured instead of as opaque byte runs.
+        # structured instead of as opaque byte runs; treat `.reloc` /
+        # `.rsrc` as opaque binary since they hold structured loader
+        # data, not GAS-meaningful pointers or strings.
         if pe.is_pe32_plus and s.name == ".pdata":
             sub_type = "pdata"
+        elif s.name in (".reloc", ".rsrc"):
+            sub_type = "bin"
         elif s.characteristics & (SCN_CNT_CODE | SCN_MEM_EXECUTE):
             sub_type = "text"
         elif s.characteristics & SCN_MEM_WRITE:
