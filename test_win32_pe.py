@@ -1629,6 +1629,36 @@ class WideStringDetectionTest(unittest.TestCase):
         self.assertIsNone(_scan_wide_string(blob, 0))
 
 
+class Win32ExactEncodingInheritanceTest(unittest.TestCase):
+    def test_inheritance_chain(self):
+        """exact_encoding resolves in priority order:
+        subsegment YAML > parent code-group YAML > class default."""
+        from src.splat.segtypes.win32.text import Win32SegText
+        from src.splat.segtypes.win32.data import Win32SegData
+
+        for cls in (Win32SegText, Win32SegData):
+            # Instantiate manually (bypass splat's segment factory).
+            obj = cls.__new__(cls)
+            obj.yaml = {}
+            obj.parent = None
+            self.assertFalse(obj.exact_encoding)  # class default
+
+            obj.yaml = {"exact_encoding": True}
+            self.assertTrue(obj.exact_encoding)  # per-subsegment override
+
+            obj.yaml = {}
+            # Use a simple namespace as parent — it just needs a .yaml attr.
+            import types
+
+            obj.parent = types.SimpleNamespace(yaml={"exact_encoding": True})
+            self.assertTrue(obj.exact_encoding)  # inherited from parent
+
+            obj.yaml = {"exact_encoding": False}
+            self.assertFalse(
+                obj.exact_encoding
+            )  # subsegment value wins over parent
+
+
 class Win32SegtypeAliasTest(unittest.TestCase):
     def test_asm_resolves_to_text(self):
         """`type: asm` in YAML must resolve to Win32SegAsm which inherits
