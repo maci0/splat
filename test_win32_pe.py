@@ -22,6 +22,73 @@ FILE_ALIGN = 0x200
 DOS_STUB = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40)
 
 
+def _opt_header_pe32_plus(
+    entry_rva: int,
+    base_of_code: int = 0x1000,
+    data_dirs=(),
+) -> bytes:
+    """PE32+ optional header (240 bytes) — matches the layout
+    `Win32SegHeader._dump_optional_header` expects."""
+    standard = struct.pack(
+        "<HBBIIIII",
+        0x020B, 14, 0,
+        0x200, 0x200, 0,
+        entry_rva, base_of_code,
+    )
+    windows = struct.pack(
+        "<QIIHHHHHHIIIIHHQQQQII",
+        0x140000000,                 # ImageBase
+        0x1000, 0x200,               # SectionAlignment, FileAlignment
+        6, 0, 0, 0, 6, 0,
+        0,
+        0x4000,                      # SizeOfImage
+        0x200,                       # SizeOfHeaders
+        0,
+        3, 0,
+        0x100000, 0x1000, 0x100000, 0x1000,
+        0,
+        16,
+    )
+    dirs = b""
+    for i in range(16):
+        if i < len(data_dirs):
+            rva, size = data_dirs[i]
+        else:
+            rva, size = 0, 0
+        dirs += struct.pack("<II", rva, size)
+    blob = standard + windows + dirs
+    assert len(blob) == 240, len(blob)
+    return blob
+
+
+def _build_pe_plus(
+    sections,
+    data_dirs=(),
+    entry_rva=0x1000,
+) -> bytes:
+    pe_off = 0x40
+    num_sections = len(sections)
+    coff = struct.pack(
+        "<HHIIIHH",
+        0x8664, num_sections, 0x12345678,
+        0, 0, 0xF0, 0x002F,
+    )
+    opt = _opt_header_pe32_plus(entry_rva, data_dirs=data_dirs)
+    sec_headers = b"".join(
+        _section_header(s["name"], s["vsize"], s["vaddr"], s["rsize"], s["rptr"], s["chars"])
+        for s in sections
+    )
+    header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec_headers
+    header = header.ljust(FILE_ALIGN, b"\x00")
+    end = max(s["rptr"] + s["rsize"] for s in sections)
+    buf = bytearray(header.ljust(end, b"\x00"))
+    for s in sections:
+        body = s.get("body", b"")
+        body = body.ljust(s["rsize"], b"\x00")
+        buf[s["rptr"] : s["rptr"] + s["rsize"]] = body[: s["rsize"]]
+    return bytes(buf)
+
+
 def _opt_header_pe32(
     entry_rva: int,
     base_of_code: int = 0x1000,
@@ -1052,6 +1119,64 @@ class PEDelayImportsTest(unittest.TestCase):
         self.assertEqual(len(pe.delay_imports), 1)
         self.assertEqual(pe.delay_imports[0].dll, "OLDDLL.dll")
         self.assertEqual(pe.delay_imports[0].name, "LegacyFn")
+
+    def test_pe32_plus_delay_import(self):
+        """PE32+ delay imports use 8-byte thunks; verify the 64-bit
+        path. (The default tests use 4-byte PE32 thunks.)"""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+
+        dll_name_rva = rdata_rva + 0x80
+        iat_rva = rdata_rva + 0x40
+        int_rva = rdata_rva + 0x50
+        ibn_rva = rdata_rva + 0x70
+
+        body = bytearray(0x100)
+        struct.pack_into(
+            "<IIIIIIII", body, 0x00,
+            1, dll_name_rva, 0, iat_rva, int_rva, 0, 0, 0,
+        )
+        # ILT: one 8-byte entry pointing at IMAGE_IMPORT_BY_NAME, then NUL.
+        struct.pack_into("<Q", body, 0x50, ibn_rva)
+        struct.pack_into("<Q", body, 0x58, 0)
+        # IMAGE_IMPORT_BY_NAME (hint + name).
+        struct.pack_into("<H", body, 0x70, 0)
+        body[0x72 : 0x72 + 11] = b"NtCreateFile\x00"[:11]
+        body[0x80 : 0x80 + 11] = b"ntdll.dll\x00"
+
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (rdata_rva, 0x40),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertTrue(pe.is_pe32_plus)
+        self.assertEqual(len(pe.delay_imports), 1)
+        self.assertEqual(pe.delay_imports[0].dll, "ntdll.dll")
+        self.assertEqual(pe.delay_imports[0].iat_rva, iat_rva)
 
     def test_v2_delay_import(self):
         rdata_rva = 0x2000
