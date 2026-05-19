@@ -263,7 +263,13 @@ class Win32SegHeader(CommonSegHeader):
         out.append(f" *   Machine:           0x{pe.machine:04X}"
                    + (" (i386)" if pe.machine == 0x014C else " (amd64)" if pe.machine == 0x8664 else ""))
         out.append(f" *   ImageBase:         0x{pe.image_base:08X}")
-        out.append(f" *   EntryPoint:        0x{pe.entry_point_va:08X}")
+        if pe.entry_point_rva:
+            out.append(
+                f" *   EntryPoint:        0x{pe.entry_point_va:08X}"
+                f"  (RVA 0x{pe.entry_point_rva:X})"
+            )
+        else:
+            out.append(" *   EntryPoint:        (none — DLL with no entry)")
         sub_name = _SUBSYSTEMS.get(pe.subsystem, f"0x{pe.subsystem:04X}")
         out.append(f" *   Subsystem:         {sub_name}")
         if pe.linker_major or pe.linker_minor:
