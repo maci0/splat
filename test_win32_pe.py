@@ -2130,6 +2130,69 @@ class CreateConfigExportLabelDedupTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class CreateConfigImportDllSanitizeTest(unittest.TestCase):
+    def test_dll_name_with_hyphen_is_fully_sanitized(self):
+        """A DLL name like 'api-ms-win-core-com-l1-1-0.dll' would, with
+        bare `.replace('.', '_')`, leave hyphens in the label — invalid
+        GAS identifiers. Sanitize the whole stem."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        body = bytearray(0x100)
+        ilt_rva = rdata_rva + 0x50
+        iat_rva = rdata_rva + 0x60
+        dll_rva = rdata_rva + 0x30
+        hn_rva = rdata_rva + 0x70
+        # Descriptor 1 + null terminator.
+        struct.pack_into("<IIIII", body, 0x00, ilt_rva, 0, 0, dll_rva, iat_rva)
+        struct.pack_into("<IIIII", body, 0x14, 0, 0, 0, 0, 0)
+        # Hyphenated DLL name.
+        dll_name = b"api-ms-win-core-com-l1-1-0.dll\x00"
+        body[0x30 : 0x30 + len(dll_name)] = dll_name
+        # Single thunk + NUL.
+        struct.pack_into("<II", body, 0x50, hn_rva, 0)
+        struct.pack_into("<II", body, 0x60, hn_rva, 0)
+        # Hint/name.
+        body[0x70 : 0x70 + 2] = b"\x00\x00"
+        body[0x72 : 0x72 + 9] = b"CoCreate\x00"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x20},
+                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(0, 0), (rdata_rva, 0x100)],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-dllname-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "hyphen.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            txt = (tmpdir / "symbol_addrs.txt").read_text()
+            self.assertIn("imp_api_ms_win_core_com_l1_1_0_dll_CoCreate", txt)
+            # No raw hyphens in any emitted symbol label (label part only,
+            # not the comment tail).
+            for line in txt.splitlines():
+                if "=" in line and "0x" in line:
+                    label = line.split("=")[0].strip()
+                    self.assertNotIn("-", label, f"hyphen leaked into label: {line}")
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigImportLabelDedupTest(unittest.TestCase):
     def test_clashing_sanitized_import_labels_get_rva_suffix(self):
         """Two imports from the same DLL with distinct mangled names
