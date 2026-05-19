@@ -280,6 +280,68 @@ class PEExportsTest(unittest.TestCase):
         self.assertEqual(pe.exports[0].rva, 0x1000)
 
 
+class PEOrdinalExportTest(unittest.TestCase):
+    def test_ordinal_only_export(self):
+        """Exports listed without a name (NumberOfFunctions >
+        NumberOfNames) still need a PEExport entry — captured by
+        ordinal, with .name == None."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        # Layout:
+        #   0x00 : IMAGE_EXPORT_DIRECTORY
+        #   0x28 : funcs array (2 entries)
+        #   0x30 : names array (0 entries → omitted)
+        #   0x30 : ordinals array (0 entries → omitted)
+        #   0x32 : DLL name
+        funcs_rva = rdata_rva + 0x28
+        dll_name_rva = rdata_rva + 0x32
+        body = bytearray(0x80)
+        struct.pack_into(
+            "<IIHHIIIIIII", body, 0x00,
+            0, 0, 0, 0,
+            dll_name_rva,
+            5,         # ordinal base
+            2,         # num funcs
+            0,         # num names
+            funcs_rva,
+            0,         # names_rva (unused)
+            0,         # ords_rva (unused)
+        )
+        # Two function RVAs.
+        struct.pack_into("<II", body, 0x28, 0x1000, 0x1100)
+        body[0x32 : 0x32 + 11] = b"OrdLib.dll\x00"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x200,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x200,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[(rdata_rva, 0x80)],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(pe.export_dll_name, "OrdLib.dll")
+        self.assertEqual(len(pe.exports), 2)
+        # Ordinal base 5 + function index 0/1 = ordinals 5/6.
+        self.assertEqual([(e.name, e.ordinal) for e in pe.exports],
+                         [(None, 5), (None, 6)])
+
+
 class PEForwardedExportTest(unittest.TestCase):
     def test_forwarder_captured(self):
         # Construct an export directory where the single function RVA falls
