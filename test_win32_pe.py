@@ -347,6 +347,63 @@ class PEImportsTest(unittest.TestCase):
 
 
 class PEDebugTest(unittest.TestCase):
+    def test_nb10_pdb_path(self):
+        """CodeView 5.0 (NB10) records carry a 4-byte signature + 4-byte
+        age + NUL-terminated path. Cover the older format separately
+        from RSDS, since legacy MSVC 6 binaries (Europa1400 etc.) use it."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        # NB10 layout: 'NB10' + offset(4) + signature(4) + age(4) + name
+        cv_record = (
+            b"NB10"
+            + struct.pack("<I", 0)        # CodeView offset (always 0)
+            + struct.pack("<I", 0x3FFD22BC)  # signature (matches Europa1400)
+            + struct.pack("<I", 2)         # age
+            + b"legacy.pdb\x00"
+        )
+        entry = struct.pack(
+            "<IIHHIIII",
+            0, 0, 0, 0,
+            2,                                # IMAGE_DEBUG_TYPE_CODEVIEW
+            len(cv_record),
+            rdata_rva + 28,                   # AddressOfRawData
+            rdata_rptr + 28,                  # PointerToRawData
+        )
+        body = bytearray(0x100)
+        body[0:28] = entry
+        body[28 : 28 + len(cv_record)] = cv_record
+
+        pe_bytes = _build_pe(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (rdata_rva, 28),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(pe.pdb_path, "legacy.pdb")
+        self.assertEqual(pe.pdb_age, 2)
+        self.assertEqual(pe.pdb_guid, "3FFD22BC")
+
     def test_rsds_pdb_path(self):
         rdata_rva = 0x2000
         rdata_rptr = FILE_ALIGN * 2
