@@ -472,6 +472,61 @@ class PETlsTest(unittest.TestCase):
 
 
 class PEResourcesTest(unittest.TestCase):
+    def test_named_resource_type(self):
+        """Resource directory entries can be keyed by string name as well
+        as integer ID. Verify the parser captures the UTF-16 name."""
+        rsrc_rva = 0x3000
+        rsrc_rptr = FILE_ALIGN * 3
+
+        body = bytearray(0x200)
+        # Root (type) dir — 1 named entry, 0 id entries
+        struct.pack_into("<IIHHHH", body, 0x000, 0, 0, 0, 0, 1, 0)
+        # Named entry: name field has high bit set + offset to name string
+        struct.pack_into("<II", body, 0x010, 0x80000000 | 0x080, 0x80000000 | 0x018)
+        # Name dir
+        struct.pack_into("<IIHHHH", body, 0x018, 0, 0, 0, 0, 0, 1)
+        struct.pack_into("<II", body, 0x028, 1, 0x80000000 | 0x030)
+        # Lang dir
+        struct.pack_into("<IIHHHH", body, 0x030, 0, 0, 0, 0, 0, 1)
+        struct.pack_into("<II", body, 0x040, 0x0409, 0x048)
+        # Leaf entry
+        struct.pack_into("<IIII", body, 0x048, rsrc_rva + 0x100, 4, 0, 0)
+        # IMAGE_RESOURCE_DIR_STRING at offset 0x080: WORD length + UTF-16 chars
+        name = "MYTYPE"
+        utf16 = name.encode("utf-16-le")
+        struct.pack_into("<H", body, 0x080, len(name))
+        body[0x082 : 0x082 + len(utf16)] = utf16
+        # Leaf bytes
+        body[0x100 : 0x104] = b"DATA"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rsrc",
+                    "vsize": 0x200,
+                    "vaddr": rsrc_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rsrc_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[(0, 0), (0, 0), (rsrc_rva, 0x200)],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(len(pe.resources), 1)
+        self.assertEqual(pe.resources[0].rtype, "MYTYPE")
+        self.assertEqual(pe.resources[0].rid, 1)
+
     def test_walk_tree(self):
         # Build a minimal 3-level resource tree:
         #   Type 16 (VERSION) → Name 1 → Lang 0x0409 → leaf.
