@@ -2076,6 +2076,48 @@ class Win32SegtypeAliasTest(unittest.TestCase):
         self.assertEqual(Win32SegAsm.__bases__, (Win32SegText,))
 
 
+class CapstoneDisassemblerTest(unittest.TestCase):
+    def test_known_types_includes_primitive_set(self):
+        """CapstoneDisassembler.known_types returns the spimdisasm-mirror
+        primitive vocabulary so symbol_addrs.txt `type:u32` /
+        `type:asciz` entries get accepted by splat's check_valid_type."""
+        from src.splat.disassembler.capstone_disassembler import (
+            CapstoneDisassembler,
+        )
+
+        d = CapstoneDisassembler()
+        kt = d.known_types()
+        for t in ("u8", "u32", "s32", "f32", "char", "asciz"):
+            self.assertIn(t, kt)
+
+    def test_engine_lazy_creation_uses_pe_bitness(self):
+        """get_engine() picks CS_MODE_32 / CS_MODE_64 from the parsed
+        PE's is_pe32_plus flag — checks deferred-init path."""
+        import capstone
+        from src.splat.disassembler.capstone_disassembler import (
+            CapstoneDisassembler,
+        )
+
+        d = CapstoneDisassembler()
+
+        # Save / restore the global PE info so we don't bleed state.
+        old_info = win32_platform.info
+        try:
+            # PE32 — should get 32-bit mode.
+            win32_platform.info = win32_platform.PEInfo(is_pe32_plus=False)
+            d._md = None  # force recreation
+            md = d.get_engine()
+            self.assertEqual(md.mode, capstone.CS_MODE_32)
+
+            # PE32+ — should get 64-bit mode.
+            win32_platform.info = win32_platform.PEInfo(is_pe32_plus=True)
+            d._md = None
+            md = d.get_engine()
+            self.assertEqual(md.mode, capstone.CS_MODE_64)
+        finally:
+            win32_platform.info = old_info
+
+
 class Win32SubsystemNamesTest(unittest.TestCase):
     def test_subsystem_table_coverage(self):
         """Subsystem ID → name mapping must cover the common values
