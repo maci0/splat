@@ -1808,6 +1808,30 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.parse_pe(b"MZ" + b"\x00" * 10)
 
+    def test_arm64_machine_rejected_at_init(self):
+        """ARM64 PE binaries parse cleanly through parse_pe (structures
+        are architecture-neutral) but init() must reject them with an
+        explicit message — the disassembler is x86-only."""
+        # Hand-build a tiny PE32+ with Machine = 0xAA64 (ARM64).
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0xAA64, 1, 0x12345678, 0, 0, 0xF0, 0x002F,
+        )
+        opt = _opt_header_pe32_plus(entry_rva=0x1000)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        blob = bytes(header).ljust(FILE_ALIGN * 2, b"\x00")
+        # parse_pe alone is OK — structures are arch-neutral.
+        pe = win32_platform.parse_pe(blob)
+        self.assertEqual(pe.machine, 0xAA64)
+        # init() escalates to log.error → SystemExit because the
+        # downstream x86 capstone backend can't disassemble ARM64.
+        with self.assertRaises(SystemExit):
+            win32_platform.init(blob)
+
     def test_machine_magic_mismatch(self):
         """A PE file with i386 Machine but PE32+ optional header magic
         (or vice-versa) must be rejected — both fields encode pointer
