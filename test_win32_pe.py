@@ -1344,6 +1344,66 @@ class PEDelayImportsTest(unittest.TestCase):
         self.assertEqual(pe.delay_imports[0].iat_rva, iat_rva)
 
 
+class PEPlusImportTest(unittest.TestCase):
+    def test_pe32_plus_imports(self):
+        """PE32+ imports walk 8-byte thunks; the ordinal flag sits in the
+        high bit of a QWORD, not a DWORD. Verify the 64-bit path."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+
+        ilt_rva = rdata_rva + 0x28
+        iat_rva = rdata_rva + 0x40
+        dll_name_rva = rdata_rva + 0x70
+        ibn_rva = rdata_rva + 0x60
+
+        body = bytearray(0x100)
+        struct.pack_into(
+            "<IIIII", body, 0x00,
+            ilt_rva, 0, 0, dll_name_rva, iat_rva,
+        )
+        # ILT: 8-byte entry pointing at IMAGE_IMPORT_BY_NAME, then NUL.
+        struct.pack_into("<Q", body, 0x28, ibn_rva)
+        struct.pack_into("<Q", body, 0x30, 0)
+        # IAT mirrors ILT
+        struct.pack_into("<Q", body, 0x40, ibn_rva)
+        struct.pack_into("<Q", body, 0x48, 0)
+        # IMAGE_IMPORT_BY_NAME at 0x60: hint + name
+        struct.pack_into("<H", body, 0x60, 0)
+        body[0x62 : 0x62 + 11] = b"NtReadFile\x00"
+        # DLL name at 0x70 (no overlap with IBN)
+        body[0x70 : 0x70 + 10] = b"ntdll.dll\x00"
+
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[(0, 0), (rdata_rva, 0x28)],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertTrue(pe.is_pe32_plus)
+        self.assertEqual(len(pe.imports), 1)
+        self.assertEqual(pe.imports[0].dll, "ntdll.dll")
+        self.assertEqual(pe.imports[0].name, "NtReadFile")
+        self.assertEqual(pe.imports[0].iat_rva, iat_rva)
+
+
 class PEOrdinalImportTest(unittest.TestCase):
     def test_ordinal_import(self):
         rdata_rva = 0x2000
