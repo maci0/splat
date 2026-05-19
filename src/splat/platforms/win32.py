@@ -109,10 +109,6 @@ class PEExport:
     rva: int
     forwarder: Optional[str] = None
 
-    @property
-    def va_for(self):
-        return None  # placeholder so dataclass stays dataclass; actual VA computed via PEInfo
-
 
 @dataclass
 class PEImport:
