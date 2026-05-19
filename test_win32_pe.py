@@ -2489,6 +2489,32 @@ class PEEdgeCasesTest(unittest.TestCase):
         self.assertEqual(pe.entry_point_rva, 0)
         # Should not crash later when consumers check entry_point_va.
 
+    def test_excessive_data_directory_count_capped(self):
+        """Some malformed/fuzzed PEs declare NumberOfRvaAndSizes far
+        beyond the canonical 16. Parser must cap iteration at 16 rather
+        than walking past the optional header into section territory."""
+        coff_off = 0x40 + 4
+        # Standard PE32 optional header (96 bytes) plus 16 data dir
+        # slots — total 224 = 0xE0 — but NumberOfRvaAndSizes claims 9999.
+        size_of_opt = 0xE0
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+        )
+        opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
+        # NumberOfRvaAndSizes is the LAST DWORD before the data
+        # directory array — at offset 92 within the optional header.
+        struct.pack_into("<I", opt, 92, 9999)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN
+        pe = win32_platform.parse_pe(bytes(buf))
+        # Iteration capped at 16 even though field says 9999.
+        self.assertEqual(len(pe.data_directories), 16)
+
     def test_sparse_data_directory_count(self):
         """An optional header can declare NumberOfRvaAndSizes < 16
         (rare, older MSVC). Parser should walk only the declared count
