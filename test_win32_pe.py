@@ -2768,6 +2768,57 @@ class CreateConfigCfgSymbolsTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class CreateConfigReadOnlyTailBssTest(unittest.TestCase):
+    def test_readonly_section_with_tail_gets_bss_subsegment(self):
+        """A .rdata section with VirtualSize > SizeOfRawData has a tail
+        that the loader zero-fills at map time. Even though it's not
+        writable, we still need a BSS subsegment so splat models the
+        linker layout correctly."""
+        text_body = b"\x90" * FILE_ALIGN
+        rdata_body = b"\x11" * 0x10  # only 0x10 raw bytes
+        sec_text = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        # .rdata with virtual_size = 0x100 but raw_size = 0x200 (FILE_ALIGN).
+        # Actually rdata raw is FILE_ALIGN (0x200 bytes), virtual = 0x400 →
+        # tail = 0x200 zero-fill.
+        sec_rdata = _section_header(
+            b".rdata", 0x400, 0x2000, FILE_ALIGN, FILE_ALIGN * 2, 0x40000040
+        )
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec_text + sec_rdata
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = (
+            bytearray(header)
+            + text_body
+            + rdata_body.ljust(FILE_ALIGN, b"\x00")
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-rotail-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "rotail.exe"
+            exe.write_bytes(bytes(buf))
+            create_win32_config(exe, bytes(buf))
+            yaml_txt = (tmpdir / "rotail.exe.yaml").read_text()
+            # rdata's tail section should be BSS.
+            self.assertIn("rdata_bss", yaml_txt)
+            self.assertIn("bss_size: 0x200", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigTlsAndSafeSehSymbolsTest(unittest.TestCase):
     def test_tls_callbacks_and_safeseh_emit_symbol_addrs_rows(self):
         """The PE optional header's TLS directory enumerates callbacks

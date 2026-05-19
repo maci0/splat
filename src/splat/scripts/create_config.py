@@ -524,7 +524,12 @@ options:
         # Virtual-only tail: file-backed section that extends in memory
         # past its raw bytes (MSVC zero-init globals). Model as a BSS
         # segment so the linker layout matches the runtime image.
-        if s.virtual_size > s.raw_size and s.characteristics & SCN_MEM_WRITE:
+        # Virtual-only tail: file-backed section that extends in memory
+        # past its raw bytes — loader zero-fills the tail. Applies to
+        # both writable .data (MSVC zero-init globals) and any other
+        # section with VirtualSize > SizeOfRawData (occasionally seen on
+        # .rdata when constants are aligned past the file boundary).
+        if s.virtual_size > s.raw_size:
             tail_vram = pe.image_base + s.virtual_address + s.raw_size
             tail_size = s.virtual_size - s.raw_size
             segments += f"""\
