@@ -2616,6 +2616,51 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigPathologicalBasenameTest(unittest.TestCase):
+    def test_empty_basename_after_sanitization_falls_back(self):
+        """A filename composed entirely of characters that
+        remove_invalid_path_characters strips would otherwise produce a
+        bare '.yaml' / '.ld' output. Fall back to a synthetic basename."""
+        # Build a minimal PE.
+        body = b"\x00" * 0x10
+        size_of_opt = 0xE0
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from src.splat.scripts.create_config import (
+            remove_invalid_path_characters,
+        )
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-empty-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            # All-spaces filename — `basename.replace(" ", "")` returns ''
+            # (Path treats the path as a child of tmpdir even when the
+            # name is whitespace).
+            sp_path = tmpdir / "  "
+            sp_path.write_bytes(bytes(buf))
+            create_win32_config(sp_path, bytes(buf))
+            # Synthetic fallback basename used since cleaned_basename = ''.
+            self.assertTrue((tmpdir / "pe_target.yaml").exists())
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigYamlQuotedPathTest(unittest.TestCase):
     def test_target_path_with_spaces_is_quoted_in_yaml(self):
         """A binary located at a path with spaces (or colons / hashes —

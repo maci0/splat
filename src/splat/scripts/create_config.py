@@ -387,6 +387,13 @@ def create_win32_config(exe_path: Path, exe_bytes: bytes):
     pe = parse_pe(exe_bytes)
     basename = exe_path.name.replace(" ", "").lower()
     cleaned_basename = remove_invalid_path_characters(basename)
+    if not cleaned_basename:
+        # Pathological filename (all spaces / all invalid chars stripped
+        # to empty) would produce a bare ".yaml" / ".ld" output and a
+        # YAML basename: '' that splat rejects. Fall back to a synthetic
+        # placeholder so generated artefacts still have names.
+        cleaned_basename = "pe_target"
+        basename = cleaned_basename
 
     sha1 = hashlib.sha1(exe_bytes).hexdigest()
 
