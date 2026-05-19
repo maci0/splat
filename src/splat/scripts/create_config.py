@@ -712,13 +712,18 @@ options:
                 "targets omitted; bump the cap in create_win32_config to list all."
             )
 
-    symbol_addrs.append("")
     with Path("symbol_addrs.txt").open("w", encoding="utf-8", newline="\n") as f:
         print("Writing symbol_addrs.txt")
         f.write(
             "// Visit https://github.com/ethteck/splat/wiki/Adding-Symbols for documentation about this file\n"
         )
-        f.write("\n".join(symbol_addrs))
+        body = "\n".join(symbol_addrs)
+        f.write(body)
+        # POSIX convention: text files end with a newline. Avoid the
+        # "missing newline at end of file" lint when symbol_addrs.txt
+        # has no body entries (resource-only DLL, all-forwarder shim).
+        if not body.endswith("\n"):
+            f.write("\n")
 
     # One-line summary of the corpus so the user knows at-a-glance what
     # auto-config found in their PE.
