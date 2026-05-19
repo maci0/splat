@@ -514,6 +514,7 @@ options:
     if pe.exports:
         symbol_addrs.append("")
         symbol_addrs.append(f"// Exports from {pe.export_dll_name or exe_path.name}")
+        seen_labels: set = set()
         for exp in pe.exports:
             if exp.forwarder is not None:
                 continue
@@ -521,6 +522,11 @@ options:
             # Sanitize: some DLLs export C++ mangled names with characters
             # that GAS can't ingest as labels.
             safe = "".join(c if c.isalnum() or c == "_" else "_" for c in name)
+            # C++ overloads can have distinct mangled names that collapse to
+            # the same sanitized label. Suffix the ordinal to disambiguate.
+            if safe in seen_labels:
+                safe = f"{safe}__ord{exp.ordinal}"
+            seen_labels.add(safe)
             va = pe.image_base + exp.rva
             trailing = f"// type:func -- ordinal {exp.ordinal}"
             if exp.name and safe != exp.name:
