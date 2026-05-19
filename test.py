@@ -309,6 +309,77 @@ class Testing(unittest.TestCase):
             if out_root.exists():
                 _shutil.rmtree(out_root)
 
+    def test_win32_exact_encoding_pe32_plus(self):
+        """Mirror of `test_win32_exact_encoding` for the PE32+ fixture.
+        Locks down that x86_64 emit_disasm + exact_encoding round-trips
+        the .text byte-for-byte through `as --64` + objcopy."""
+        import shutil as _shutil
+        import subprocess as _sub
+
+        if _shutil.which("as") is None or _shutil.which("objcopy") is None:
+            self.skipTest("`as` / `objcopy` not installed")
+
+        spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False
+
+        fixture_dir = Path("test/win32_app64")
+        gen_spec = importlib.util.spec_from_file_location(
+            "_win32_exact_gen64", fixture_dir / "generate.py"
+        )
+        gen = importlib.util.module_from_spec(gen_spec)
+        gen_spec.loader.exec_module(gen)
+        gen.main()
+
+        out_root = fixture_dir / "split-exact"
+        if out_root.exists():
+            shutil.rmtree(out_root)
+
+        exact_yaml = fixture_dir / "splat-exact.yaml"
+        exact_yaml.write_text(
+            (fixture_dir / "splat.yaml")
+            .read_text(encoding="utf-8")
+            .replace("base_path: split", "base_path: split-exact")
+            .replace(
+                "[0x200, text, main_text]",
+                "{ start: 0x200, type: text, name: main_text, exact_encoding: true }",
+            )
+        )
+
+        from src.splat.scripts.split import main as splat_main
+
+        splat_main([exact_yaml], None, False)
+
+        asm = out_root / "asm/main_text.s"
+        obj = fixture_dir / "main_text.o"
+        binf = fixture_dir / "main_text.bin"
+        try:
+            r = _sub.run(
+                ["as", "--64", str(asm), "-o", str(obj)], capture_output=True
+            )
+            self.assertEqual(r.returncode, 0, r.stderr.decode())
+            r = _sub.run(
+                ["objcopy", "-O", "binary", "-j", ".text", str(obj), str(binf)],
+                capture_output=True,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr.decode())
+            # Fixture text section starts at file 0x200; check at least the
+            # first few instructions: `mov eax, 0x2a; ret` + RIP-relative
+            # data load (whatever generate.py emits).
+            orig_full = (fixture_dir / "win32_app64.exe").read_bytes()
+            orig = orig_full[0x200 : 0x200 + 0x20]
+            reasm = binf.read_bytes()[: len(orig)]
+            self.assertEqual(
+                orig,
+                reasm,
+                f"exact_encoding PE32+ text bytes diverge "
+                f"({sum(1 for a,b in zip(orig, reasm) if a != b)} mismatches)",
+            )
+        finally:
+            for p in (obj, binf, exact_yaml):
+                if p.exists():
+                    p.unlink()
+            if out_root.exists():
+                _shutil.rmtree(out_root)
+
     def test_basic_app(self):
         spimdisasm.common.GlobalConfig.ASM_GENERATED_BY = False
         main([Path("test/basic_app/splat.yaml")], None, False)
