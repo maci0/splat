@@ -1642,6 +1642,18 @@ class Win32SegtypeAliasTest(unittest.TestCase):
         self.assertEqual(Win32SegAsm.__bases__, (Win32SegText,))
 
 
+class Win32LinkerVersionTest(unittest.TestCase):
+    def test_linker_version_label_known_majors(self):
+        """linker_version_label maps each MSVC major version to a
+        recognizable product name; unknown majors fall back to a
+        plain `linker vN.NN` rendering."""
+        from src.splat.platforms.win32 import linker_version_label
+
+        self.assertEqual(linker_version_label(6, 0), "MSVC 6.0")
+        self.assertEqual(linker_version_label(14, 34), "MSVC 14.x / VS 2015-2022")
+        self.assertEqual(linker_version_label(99, 5), "linker v99.05")
+
+
 class Win32SegHeaderUtilsTest(unittest.TestCase):
     """Targeted tests for the small helpers in header.py — these wrap
     `_decode_flags` and the Subsystem table."""
