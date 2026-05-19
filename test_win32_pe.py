@@ -2149,6 +2149,25 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.init(blob)
 
+    def test_section_table_truncated(self):
+        """NumberOfSections * 40 must fit between the end of the optional
+        header and EOF. Declaring 10 sections but only providing 2 must
+        be caught explicitly."""
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 10,                  # claim 10 sections
+            0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        # Only enough space for 2 section headers — half of the declared.
+        sec = b"\x00" * (40 * 2)
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        # Truncate so the remaining 8 sections can't fit.
+        header = header[: 0x40 + 4 + 20 + 0xE0 + 40 * 2]
+        with self.assertRaises(SystemExit):
+            win32_platform.parse_pe(header)
+
     def test_zero_optional_header_size(self):
         """SizeOfOptionalHeader == 0 means there's no optional header
         at all (technically valid only for COFF object files, not PE
