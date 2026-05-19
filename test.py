@@ -176,17 +176,20 @@ class Testing(unittest.TestCase):
         # RIP-relative load should be substituted with the .rdata label.
         self.assertIn("[D_140002000]", text)
 
-        # Round-trip: the output must assemble cleanly with GAS.
-        self._assert_assembles(split_dir / "asm/main_text.s", "--64")
+        # Round-trip: every generated .s file must assemble cleanly with GAS.
+        for asm in sorted(split_dir.rglob("*.s")):
+            self._assert_assembles(asm, "--64")
 
         # Win32SegPdata renders the RUNTIME_FUNCTION record as a
         # structured `.long … RUNTIME_FUNCTION` row (vs an opaque byte
         # blob). The single record in the fixture covers our text body.
-        pdata_path = split_dir / "data/main_pdata.s"
-        if pdata_path.exists():
-            pdata = pdata_path.read_text(encoding="utf-8")
-            self.assertIn("RUNTIME_FUNCTION", pdata)
-            self.assertIn(".pdata", pdata)
+        pdata_path = split_dir / "asm/data/main_pdata.s"
+        self.assertTrue(pdata_path.exists(), "pdata file missing")
+        pdata = pdata_path.read_text(encoding="utf-8")
+        self.assertIn("RUNTIME_FUNCTION", pdata)
+        self.assertIn(".pdata", pdata)
+        # Single record + null terminator + trailing zero .space.
+        self.assertIn(".space", pdata)
 
     def _assert_assembles(self, asm_path: Path, mode_flag: str) -> None:
         """Invoke `as` to assemble the given file. Skip silently if `as`
