@@ -1947,6 +1947,45 @@ class PERelocsTest(unittest.TestCase):
         self.assertEqual(pe.pointer_rvas, {0x3010, 0x3020})
 
 
+class EscapeStringTest(unittest.TestCase):
+    """`_escape_string` produces the same GAS-compatible escape forms
+    consistently across the data segment's `.asciz` emission and the
+    wide-string `/* L"..." */` preview comments."""
+
+    def test_quote_and_backslash_escaped(self):
+        from src.splat.segtypes.win32.data import _escape_string
+        self.assertEqual(_escape_string(b'"\\'), r'\"\\')
+
+    def test_tab_newline_return_use_short_forms(self):
+        from src.splat.segtypes.win32.data import _escape_string
+        self.assertEqual(_escape_string(b"\t\n\r"), r"\t\n\r")
+
+    def test_non_printable_uses_hex_escape(self):
+        from src.splat.segtypes.win32.data import _escape_string
+        # 0x01 (SOH) — out of printable range, fall back to \xNN form.
+        self.assertEqual(_escape_string(b"\x01"), r"\x01")
+
+    def test_latin1_supplement_uses_hex_escape(self):
+        from src.splat.segtypes.win32.data import _escape_string
+        # 0xFC (ü) — _is_string_byte now accepts it for scanning, but
+        # _escape_string still emits it as \xfc so GAS interprets the
+        # byte literally instead of relying on locale codepage decoding.
+        self.assertEqual(_escape_string(b"\xfc"), r"\xfc")
+
+    def test_decode_wide_round_trips_basic_latin(self):
+        from src.splat.segtypes.win32.data import _decode_wide
+        # UTF-16LE bytes for "AB" → "AB" passthrough.
+        self.assertEqual(_decode_wide(b"A\x00B\x00"), "AB")
+
+    def test_decode_wide_uses_unicode_escape_for_non_ascii(self):
+        from src.splat.segtypes.win32.data import _decode_wide
+        # Polish 'ł' is U+0142 — outside the 0x20-0x7E printable subset
+        # used for the preview, so the comment falls back to \uNNNN
+        # form rather than the literal codepoint (keeps the generated
+        # .s ASCII-only).
+        self.assertEqual(_decode_wide(b"\x42\x01"), "\\u0142")
+
+
 class NarrowStringDetectionTest(unittest.TestCase):
     """Narrow ANSI string scanner: NUL-terminated runs of printable bytes."""
 
