@@ -990,6 +990,69 @@ class PEVersionInfoTest(unittest.TestCase):
 
 
 class PEDelayImportsTest(unittest.TestCase):
+    def test_v1_va_based_delay_import(self):
+        """Pre-VS2008 / legacy MSVC emits IMAGE_DELAYLOAD_DESCRIPTOR with
+        attrs=0 — its address fields are VAs (need ImageBase subtraction)
+        rather than RVAs. Verify the parser handles both formats."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+
+        dll_name_va = IMAGE_BASE + rdata_rva + 0x60
+        iat_va = IMAGE_BASE + rdata_rva + 0x40
+        int_va = IMAGE_BASE + rdata_rva + 0x48
+        ibn_rva = rdata_rva + 0x50
+
+        body = bytearray(0x100)
+        struct.pack_into(
+            "<IIIIIIII", body, 0x00,
+            0,                # attrs (v1: VA-based)
+            dll_name_va,
+            0,
+            iat_va,
+            int_va,
+            0,
+            0,
+            0xCAFE,
+        )
+        struct.pack_into("<I", body, 0x48, ibn_rva)
+        struct.pack_into("<I", body, 0x4C, 0)
+        struct.pack_into("<H", body, 0x50, 0)
+        body[0x52 : 0x52 + 9] = b"LegacyFn\x00"
+        body[0x60 : 0x60 + 10] = b"OLDDLL.dll"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (rdata_rva, 0x40),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(len(pe.delay_imports), 1)
+        self.assertEqual(pe.delay_imports[0].dll, "OLDDLL.dll")
+        self.assertEqual(pe.delay_imports[0].name, "LegacyFn")
+
     def test_v2_delay_import(self):
         rdata_rva = 0x2000
         rdata_rptr = FILE_ALIGN * 2
