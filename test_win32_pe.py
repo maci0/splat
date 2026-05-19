@@ -2063,6 +2063,57 @@ class CreateConfigRejectionTest(unittest.TestCase):
             tmp.unlink()
 
 
+class CreateConfigEntrypointOmissionTest(unittest.TestCase):
+    def test_dll_with_no_entrypoint_omits_entrypoint_symbol(self):
+        """A DLL built without DllMain has AddressOfEntryPoint = 0. The
+        generated symbol_addrs file must NOT include an 'entrypoint = ...'
+        line in that case, otherwise we'd label the PE header as a
+        function."""
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        # PE32 DLL with entry_point_rva = 0.
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        body = b"\x00" * 0x10
+        size_of_opt = 0xE0
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, size_of_opt,
+            0x010F | 0x2000,  # IMAGE_FILE_DLL
+        )
+        opt = bytearray(_opt_header_pe32(entry_rva=0))
+        sec1 = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        sec2 = _section_header(
+            b".rdata", 0x10, rdata_rva, FILE_ALIGN, rdata_rptr, 0x40000040
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec1 + sec2
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN + body.ljust(
+            FILE_ALIGN, b"\x00"
+        )
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-noentry-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            dll_path = tmpdir / "no_entry.dll"
+            dll_path.write_bytes(bytes(buf))
+            create_win32_config(dll_path, bytes(buf))
+            sym_path = tmpdir / "symbol_addrs.txt"
+            self.assertTrue(sym_path.exists(), "symbols file should be written")
+            self.assertNotIn(
+                "entrypoint =", sym_path.read_text(),
+                "entrypoint must be omitted when AddressOfEntryPoint = 0",
+            )
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class Win32SegtypeAliasTest(unittest.TestCase):
     def test_asm_resolves_to_text(self):
         """`type: asm` in YAML must resolve to Win32SegAsm which inherits

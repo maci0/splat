@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 import subprocess
 import sys
-from typing import Optional
+from typing import List, Optional
 
 from ..util.n64 import find_code_length, rominfo
 from ..util.psx import psxexeinfo
@@ -503,10 +503,14 @@ options:
     file_presets.write_all_files()
 
     # Stash the entry point and any exported function as known symbols so
-    # the disassembly labels them.
-    symbol_addrs = [
-        f"entrypoint = 0x{pe.entry_point_va:08X}; // type:func",
-    ]
+    # the disassembly labels them. Some DLLs are built without DllMain and
+    # leave AddressOfEntryPoint = 0 — skip the entrypoint symbol in that
+    # case so we don't emit a label pointing at the PE header.
+    symbol_addrs: List[str] = []
+    if pe.entry_point_rva:
+        symbol_addrs.append(
+            f"entrypoint = 0x{pe.entry_point_va:08X}; // type:func"
+        )
     if pe.exports:
         symbol_addrs.append("")
         symbol_addrs.append(f"// Exports from {pe.export_dll_name or exe_path.name}")
