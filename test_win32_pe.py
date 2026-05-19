@@ -1947,6 +1947,52 @@ class PERelocsTest(unittest.TestCase):
         self.assertEqual(pe.pointer_rvas, {0x3010, 0x3020})
 
 
+class CreateConfigCoffSymtabSegmentTest(unittest.TestCase):
+    def test_coff_symtab_pointer_emits_bin_segment(self):
+        """Vintage MSVC 4-6 binaries can embed a deprecated COFF symbol
+        table past the last section. Modern MSVC uses PDB instead and
+        leaves PointerToSymbolTable / NumberOfSymbols zero. Emit a
+        `bin` segment for the legacy case so its bytes are extracted
+        rather than swept into the unknown-tail."""
+        body = b"\x90" * FILE_ALIGN
+        symtab_data = b"\x00" * 0x40  # 4 dummy COFF symbols
+        # PointerToSymbolTable will sit just after the .text raw bytes.
+        symtab_off = FILE_ALIGN * 2
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678,
+            symtab_off,                  # PointerToSymbolTable
+            4,                            # NumberOfSymbols
+            0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + body + symtab_data
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-coff-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "vintage.exe"
+            exe.write_bytes(bytes(buf))
+            create_win32_config(exe, bytes(buf))
+            yaml_txt = (tmpdir / "vintage.exe.yaml").read_text()
+            self.assertIn("name: coff_symtab", yaml_txt)
+            self.assertIn(f"start: 0x{symtab_off:X}", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigAllForwardersTest(unittest.TestCase):
     def test_dll_with_only_forwarder_exports_skips_exports_header(self):
         """A DLL whose every export is a forwarder (e.g. apisetschema,

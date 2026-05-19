@@ -550,6 +550,21 @@ options:
 
 """
 
+    # Tack on a `bin` segment for the COFF symbol table if the optional
+    # header points at one. Modern MSVC binaries don't emit it (PDB
+    # replaces it) but vintage MSVC 4-6 binaries still ship it past the
+    # last raw-data section. The trailing `[len(exe_bytes)]` entry
+    # delimits its end.
+    if (
+        pe.coff_symtab_ptr
+        and pe.coff_num_symbols
+        and pe.coff_symtab_ptr < len(exe_bytes)
+    ):
+        segments += (
+            f"  - {{ name: coff_symtab, type: bin, "
+            f"start: 0x{pe.coff_symtab_ptr:X} }}\n\n"
+        )
+
     segments += f"  - [0x{len(exe_bytes):X}]\n"
 
     out_file = Path(f"{cleaned_basename}.yaml")
