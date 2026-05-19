@@ -82,6 +82,13 @@
     | .reloc  |  69632 bytes  |  69632/69632 (100.0000%) |
 
     Sum: 282624 / 282624 — full byte-identical round trip on every section.
+
+    The header segment also round-trips byte-identical *without* the
+    `exact_encoding` flag (its structured `.long` / `.short` / `.byte`
+    emission produces the same bytes the linker wrote). Combined with the
+    body sections, server.dll reassembles **286720 / 286720 = 100%
+    byte-identical to the original 286 KB binary** — every header byte,
+    every instruction, every pointer table.
   * Import and delay-import descriptors with `iat_rva == 0` are now skipped — without an IAT base any per-thunk slot VA would be meaningless. Prevents bogus `imp_*` entries in malformed binaries.
   * `create_win32_config` surfaces forwarded exports as a comment block in `symbol_addrs.txt` so users can see the `<exported_name> -> KERNEL32.RealName (ordinal N)` mapping even though forwarders have no in-image VA.
   * `<segname>.functions.txt` kind column expanded to recognize additional provenance: `tls` (TLS callback), `seh` (SafeSEH handler), `cfg` (Control Flow Guard valid target), `rt` (PE32+ Exception Directory RUNTIME_FUNCTION begin). All checked via pre-computed sets for O(1) lookup per entry.
