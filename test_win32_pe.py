@@ -1909,6 +1909,29 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.parse_pe(blob)
 
+    def test_coff_symbol_table_recorded(self):
+        """PE binaries essentially never set PointerToSymbolTable
+        + NumberOfSymbols (debug info goes in the external .pdb), but
+        when they do, those fields surface on PEInfo for the header
+        summary to flag."""
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 1, 0x12345678,
+            0x12345, 42,        # PointerToSymbolTable + NumberOfSymbols
+            0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN
+        pe = win32_platform.parse_pe(bytes(buf))
+        self.assertEqual(pe.coff_symtab_ptr, 0x12345)
+        self.assertEqual(pe.coff_num_symbols, 42)
+
     def test_zero_sections(self):
         """Synthetic PE with NumberOfSections=0 — parser should accept
         and downstream rva_to_file_offset should return None for any
