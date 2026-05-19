@@ -919,6 +919,50 @@ class PELoadConfigTest(unittest.TestCase):
 
 
 class PECfgTest(unittest.TestCase):
+    def test_pe32_plus_loadconfig_cookie_only(self):
+        """An older PE32+ LoadConfig might only span 0x60 bytes
+        (covering SecurityCookie) without the +0x80..+0x90 CFG fields.
+        Parser must read the cookie and stop, not over-read."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        # LoadConfig is exactly 0x60 bytes — cookie at +0x58 is included
+        # but CFG fields at +0x80 are not.
+        body = bytearray(0x60)
+        struct.pack_into("<Q", body, 0x58, 0x140100000)
+
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x60,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0), (0, 0), (0, 0), (0, 0),
+                (rdata_rva, 0x60),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertTrue(pe.is_pe32_plus)
+        self.assertEqual(pe.security_cookie_va, 0x140100000)
+        self.assertEqual(pe.cfg_function_rvas, [])
+        self.assertEqual(pe.cfg_flags, 0)
+
     def test_pe32_cfg_table_with_extra_metadata_bytes(self):
         """The top nibble of GuardFlags encodes how many extra metadata
         bytes follow each CFG RVA in the table. Verify the parser
