@@ -248,7 +248,12 @@ def compute_iat_labels(pe: PEInfo) -> "dict":
         slot_va = pe.image_base + imp.iat_rva
         nm = imp.name or f"ordinal_{imp.ordinal}"
         safe = sanitize_label(nm)
-        full = f"imp_{sanitize_label(imp.dll)}_{safe}"
+        # Empty DLL stem after sanitisation (corrupted descriptor with
+        # missing name) — substitute a recognisable placeholder so the
+        # resulting label doesn't collapse to `imp__foo` for every
+        # unknown-DLL import.
+        dll_safe = sanitize_label(imp.dll) or "unknown"
+        full = f"imp_{dll_safe}_{safe}"
         if full in seen_eager:
             full = f"{full}__rva{imp.iat_rva:X}"
         seen_eager.add(full)
@@ -258,7 +263,8 @@ def compute_iat_labels(pe: PEInfo) -> "dict":
         slot_va = pe.image_base + imp.iat_rva
         nm = imp.name or f"ordinal_{imp.ordinal}"
         safe = sanitize_label(nm)
-        full = f"dimp_{sanitize_label(imp.dll)}_{safe}"
+        dll_safe = sanitize_label(imp.dll) or "unknown"
+        full = f"dimp_{dll_safe}_{safe}"
         if full in seen_delay:
             full = f"{full}__rva{imp.iat_rva:X}"
         seen_delay.add(full)
