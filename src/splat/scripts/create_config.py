@@ -626,6 +626,26 @@ options:
             if imp.ordinal is not None:
                 trailing += f" ordinal {imp.ordinal}"
             symbol_addrs.append(f"{full} = 0x{slot_va:08X}; {trailing}")
+
+    if pe.tls_callback_vas:
+        symbol_addrs.append("")
+        symbol_addrs.append(
+            "// TLS callbacks (run by the loader before DllMain / entrypoint)"
+        )
+        for idx, cb_va in enumerate(pe.tls_callback_vas):
+            symbol_addrs.append(
+                f"tls_callback_{idx} = 0x{cb_va:08X}; // type:func"
+            )
+
+    if pe.safe_seh_handlers:
+        symbol_addrs.append("")
+        symbol_addrs.append(
+            "// SafeSEH handlers (registered exception filter functions)"
+        )
+        for idx, rva in enumerate(pe.safe_seh_handlers):
+            va = pe.image_base + rva
+            symbol_addrs.append(f"safeseh_{idx} = 0x{va:08X}; // type:func")
+
     symbol_addrs.append("")
     with Path("symbol_addrs.txt").open("w", encoding="utf-8", newline="\n") as f:
         print("Writing symbol_addrs.txt")

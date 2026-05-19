@@ -2629,6 +2629,88 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigTlsAndSafeSehSymbolsTest(unittest.TestCase):
+    def test_tls_callbacks_and_safeseh_emit_symbol_addrs_rows(self):
+        """The PE optional header's TLS directory enumerates callbacks
+        run by the loader before DllMain. SafeSEH handlers (from the
+        Load Config directory) name every legal exception filter. Both
+        should appear in the generated symbol_addrs.txt so the analyst
+        can navigate to them by label."""
+        # Build a PE32 with TLS directory + LoadConfig + SafeSEH table.
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        # TLS directory layout: StartAddrOfRawData(4) + EndAddr(4) +
+        # AddressOfIndex(4) + AddressOfCallBacks(4) + SizeOfZeroFill(4)
+        # + Characteristics(4) = 0x18 bytes.
+        tls_dir_rva = rdata_rva + 0x00
+        cb_array_rva = rdata_rva + 0x18
+        # LoadConfig at rdata + 0x40 (size 0x48), SEH table at rdata + 0x90.
+        lc_off = 0x40
+        lc_rva = rdata_rva + lc_off
+        seh_table_off = 0x90
+        seh_table_va = IMAGE_BASE + rdata_rva + seh_table_off
+
+        body = bytearray(0x100)
+        # TLS dir.
+        struct.pack_into(
+            "<IIIIII", body, 0,
+            0, 0, 0,                                  # raw start/end/index VAs
+            IMAGE_BASE + cb_array_rva,                # AddressOfCallBacks
+            0, 0,
+        )
+        # Callback array: two VAs then NUL.
+        struct.pack_into(
+            "<III", body, 0x18,
+            IMAGE_BASE + 0x1010, IMAGE_BASE + 0x1020, 0,
+        )
+        # LoadConfig (size 0x48).
+        struct.pack_into("<I", body, lc_off + 0x00, 0x48)
+        struct.pack_into("<I", body, lc_off + 0x3C, IMAGE_BASE + 0x2400)  # cookie
+        struct.pack_into("<I", body, lc_off + 0x40, seh_table_va)
+        struct.pack_into("<I", body, lc_off + 0x44, 2)
+        # SEH handler RVAs.
+        struct.pack_into("<II", body, seh_table_off, 0x1010, 0x1020)
+
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x100, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x100},
+                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0), (0, 0), (0, 0),
+                (tls_dir_rva, 0x18),
+                (lc_rva, 0x48),
+            ],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-tls-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "tls.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            txt = (tmpdir / "symbol_addrs.txt").read_text()
+            self.assertIn("tls_callback_0 = 0x", txt)
+            self.assertIn("tls_callback_1 = 0x", txt)
+            self.assertIn("safeseh_0 = 0x", txt)
+            self.assertIn("safeseh_1 = 0x", txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigPhantomSectionTest(unittest.TestCase):
     def test_section_with_zero_raw_pointer_treated_as_bss(self):
         """A section whose SizeOfRawData > 0 but PointerToRawData == 0
