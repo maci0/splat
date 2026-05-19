@@ -417,6 +417,13 @@ def parse_exports(data: bytes, pe: PEInfo) -> None:
     if funcs_off is None:
         return
 
+    # Defensive caps. Real-world DLLs export a few thousand symbols at most
+    # (e.g. ntdll.dll ≈ 2000). A fuzzed export directory could declare
+    # millions of entries, causing the parser to scan gigabytes of data.
+    EXPORT_LIMIT = 65536
+    num_funcs = min(num_funcs, EXPORT_LIMIT)
+    num_names = min(num_names, EXPORT_LIMIT)
+
     # Map ordinal-index → name (some functions are export-by-ordinal only).
     name_for_ordinal: dict = {}
     if names_off is not None and ordinals_off is not None:

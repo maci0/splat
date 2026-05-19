@@ -2489,6 +2489,42 @@ class PEEdgeCasesTest(unittest.TestCase):
         self.assertEqual(pe.entry_point_rva, 0)
         # Should not crash later when consumers check entry_point_va.
 
+    def test_export_count_capped(self):
+        """Fuzzed export directory with NumberOfFunctions = 0xFFFFFFFF.
+        Parser must cap iteration to a sane limit so it doesn't scan
+        gigabytes of file looking for non-existent function RVAs."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        funcs_rva = rdata_rva + 0x28
+        dll_name_rva = rdata_rva + 0x30
+        body = bytearray(0x80)
+        struct.pack_into(
+            "<IIHHIIIIIII", body, 0x00,
+            0, 0, 0, 0,
+            dll_name_rva,
+            1,
+            0xFFFFFFFF,  # num funcs — absurd
+            0,
+            funcs_rva, 0, 0,
+        )
+        struct.pack_into("<I", body, 0x28, 0x1000)
+        body[0x30 : 0x30 + 11] = b"FuzzDll\x00\x00\x00\x00"
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x10},
+                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(rdata_rva, 0x80)],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        # Cap = 65536. Loop exits early once funcs_off + i*4 + 4 > len(data).
+        # Should not loop 4 billion times.
+        self.assertLessEqual(len(pe.exports), 65536)
+
     def test_number_of_sections_capped_at_96(self):
         """PE spec caps NumberOfSections at 96. Parser must not iterate
         a fuzzed huge value (e.g. 0xFFFF) past the cap. Provide enough
