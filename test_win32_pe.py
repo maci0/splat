@@ -2130,6 +2130,73 @@ class CreateConfigExportLabelDedupTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class CreateConfigEntrypointExportCollisionTest(unittest.TestCase):
+    def test_export_named_entrypoint_does_not_collide_with_entrypoint_symbol(self):
+        """A DLL whose entry point exists AND whose export table contains
+        a function literally named 'entrypoint' would otherwise emit two
+        symbol_addrs rows with the same label, which splat rejects.
+        Second occurrence must get the ordinal suffix."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        funcs_rva = rdata_rva + 0x28
+        names_rva = funcs_rva + 0x4
+        ords_rva = names_rva + 0x4
+        name_str_rva = rdata_rva + 0x40
+        dll_name_rva = rdata_rva + 0x50
+        body = bytearray(0x80)
+        struct.pack_into(
+            "<IIHHIIIIIII", body, 0x00,
+            0, 0, 0, 0,
+            dll_name_rva,
+            1, 1, 1,
+            funcs_rva, names_rva, ords_rva,
+        )
+        struct.pack_into("<I", body, 0x28, 0x1010)
+        struct.pack_into("<I", body, 0x2C, name_str_rva)
+        struct.pack_into("<H", body, 0x30, 0)
+        body[0x40 : 0x40 + 11] = b"entrypoint\x00"
+        body[0x50 : 0x50 + 11] = b"collide.dll\x00"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x20},
+                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(rdata_rva, 0x80)],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-collide-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            dll = tmpdir / "collide.dll"
+            dll.write_bytes(pe_bytes)
+            create_win32_config(dll, pe_bytes)
+            txt = (tmpdir / "symbol_addrs.txt").read_text()
+            # Built-in entrypoint kept; conflicting export suffixed.
+            self.assertIn("entrypoint = 0x", txt)
+            self.assertIn("entrypoint__ord1", txt)
+            # No duplicate bare "entrypoint =" lines.
+            label_count = sum(
+                1 for line in txt.splitlines()
+                if line.lstrip().startswith("entrypoint =")
+            )
+            self.assertEqual(label_count, 1)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigZeroSizeBssTest(unittest.TestCase):
     def test_zero_virtual_size_bss_section_is_skipped(self):
         """A section flagged as UNINITIALIZED_DATA with VirtualSize = 0

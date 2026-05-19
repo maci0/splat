@@ -530,14 +530,17 @@ options:
         return out
 
     symbol_addrs: List[str] = []
+    # Single label-namespace shared across entrypoint + exports — splat
+    # rejects multiple symbol_addrs.txt rows that bind the same label.
+    seen_labels: set = set()
     if pe.entry_point_rva:
         symbol_addrs.append(
             f"entrypoint = 0x{pe.entry_point_va:08X}; // type:func"
         )
+        seen_labels.add("entrypoint")
     if pe.exports:
         symbol_addrs.append("")
         symbol_addrs.append(f"// Exports from {pe.export_dll_name or exe_path.name}")
-        seen_labels: set = set()
         for exp in pe.exports:
             if exp.forwarder is not None:
                 continue
@@ -545,6 +548,7 @@ options:
             safe = _sanitize_id(name)
             # C++ overloads can have distinct mangled names that collapse to
             # the same sanitized label. Suffix the ordinal to disambiguate.
+            # Also catches an export literally named "entrypoint".
             if safe in seen_labels:
                 safe = f"{safe}__ord{exp.ordinal}"
             seen_labels.add(safe)
