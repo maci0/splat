@@ -9,7 +9,7 @@ segtypes for them to decode byte ranges, and surface known section names.
 from typing import Optional, Set
 
 from . import disassembler
-from ..util import log, options
+from ..util import log
 
 
 class CapstoneDisassembler(disassembler.Disassembler):
