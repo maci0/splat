@@ -403,6 +403,17 @@ def create_win32_config(exe_path: Path, exe_bytes: bytes):
         text = str(s)
         return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
+    # Pick a compiler tag from the linker version baked into the PE
+    # optional header. Values are MajorLinkerVersion → splat compiler
+    # tag; user can override in the YAML.
+    _LINKER_TO_COMPILER = {
+        2: "MSVC2", 3: "MSVC4", 4: "MSVC4", 5: "MSVC5",
+        6: "MSVC6", 7: "MSVC7", 8: "MSVC8", 9: "MSVC9",
+        10: "MSVC10", 11: "MSVC11", 12: "MSVC12",
+        14: "MSVC14",
+    }
+    compiler_tag = _LINKER_TO_COMPILER.get(pe.linker_major, "MSVC6")
+
     header = f"""\
 # name: {exe_path.name}
 sha1: {sha1}
@@ -411,7 +422,7 @@ options:
   target_path: {_yaml_quote(exe_path)}
   base_path: .
   platform: win32
-  compiler: MSVC6
+  compiler: {compiler_tag}
 
   # asm_path: asm
   # src_path: src

@@ -2629,6 +2629,84 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigMsvcAutoDetectTest(unittest.TestCase):
+    def test_linker_major_picks_matching_compiler_tag(self):
+        """The PE optional header's MajorLinkerVersion identifies which
+        MSVC linker produced the binary. The generated YAML's `compiler:`
+        line should reflect that so consumers don't have to override."""
+        # Force linker_major = 14 (MSVC14, VS 2015-2022).
+        body = b"\x00" * 0x10
+        size_of_opt = 0xE0
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+        )
+        opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
+        # MajorLinkerVersion at offset 2, MinorLinkerVersion at 3.
+        struct.pack_into("<BB", opt, 2, 14, 30)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-msvc-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "vs2019.exe"
+            exe.write_bytes(bytes(buf))
+            create_win32_config(exe, bytes(buf))
+            yaml_txt = (tmpdir / "vs2019.exe.yaml").read_text()
+            self.assertIn("compiler: MSVC14", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_unknown_linker_major_falls_back_to_msvc6(self):
+        """A binary whose linker version isn't in the lookup table (e.g.
+        a custom packer's value) should still produce a valid splat
+        config — default to MSVC6 since it's the lowest registered."""
+        body = b"\x00" * 0x10
+        size_of_opt = 0xE0
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+        )
+        opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
+        struct.pack_into("<BB", opt, 2, 99, 0)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-msvc-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "weird.exe"
+            exe.write_bytes(bytes(buf))
+            create_win32_config(exe, bytes(buf))
+            yaml_txt = (tmpdir / "weird.exe.yaml").read_text()
+            self.assertIn("compiler: MSVC6", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigPathologicalBasenameTest(unittest.TestCase):
     def test_empty_basename_after_sanitization_falls_back(self):
         """A filename composed entirely of characters that
