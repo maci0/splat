@@ -308,20 +308,9 @@ class Win32SegText(CommonSegment):
                 synth_labels[va] = safe
         # Imports live in .rdata, not .text — but they're referenced from
         # within .text via absolute memory operands, so `resolve_sym` needs
-        # to see them too. Delayed-imports get the same treatment with a
-        # `dimp_` prefix so they're distinguishable from eager imports.
-        for imp in pe.imports:
-            label = imp.name or f"ordinal_{imp.ordinal}"
-            safe = "".join(c if c.isalnum() or c == "_" else "_" for c in label)
-            synth_labels[pe.image_base + imp.iat_rva] = (
-                f"imp_{imp.dll.replace('.', '_')}_{safe}"
-            )
-        for imp in pe.delay_imports:
-            label = imp.name or f"ordinal_{imp.ordinal}"
-            safe = "".join(c if c.isalnum() or c == "_" else "_" for c in label)
-            synth_labels[pe.image_base + imp.iat_rva] = (
-                f"dimp_{imp.dll.replace('.', '_')}_{safe}"
-            )
+        # to see them too. Reuse the same {slot_va: label} map computed
+        # above for IAT-thunk renaming so labels stay in sync.
+        synth_labels.update(iat_to_label)
 
         thunk_labels: Dict[int, str] = {}
         if iat_to_label:
