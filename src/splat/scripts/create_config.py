@@ -549,10 +549,16 @@ options:
     if pe.imports:
         symbol_addrs.append("")
         symbol_addrs.append("// IAT slots (each `call dword ptr [<va>]` reaches one of these)")
+        seen_imp: set = set()
         for imp in pe.imports:
             label = imp.name or f"ordinal_{imp.ordinal}"
             safe = "".join(c if c.isalnum() or c == "_" else "_" for c in label)
             full = f"imp_{imp.dll.replace('.', '_')}_{safe}"
+            # Duplicate slot VAs shouldn't happen in a well-formed IAT,
+            # but mangled-name collisions can still collide labels.
+            if full in seen_imp:
+                full = f"{full}__rva{imp.iat_rva:X}"
+            seen_imp.add(full)
             slot_va = pe.image_base + imp.iat_rva
             trailing = f"// type:u32 -- import from {imp.dll}"
             if imp.ordinal is not None:
@@ -562,10 +568,14 @@ options:
     if pe.delay_imports:
         symbol_addrs.append("")
         symbol_addrs.append("// Delay-load IAT slots (resolved on first call via __delayLoadHelper2)")
+        seen_dimp: set = set()
         for imp in pe.delay_imports:
             label = imp.name or f"ordinal_{imp.ordinal}"
             safe = "".join(c if c.isalnum() or c == "_" else "_" for c in label)
             full = f"dimp_{imp.dll.replace('.', '_')}_{safe}"
+            if full in seen_dimp:
+                full = f"{full}__rva{imp.iat_rva:X}"
+            seen_dimp.add(full)
             slot_va = pe.image_base + imp.iat_rva
             trailing = f"// type:u32 -- delay-loaded import from {imp.dll}"
             if imp.ordinal is not None:

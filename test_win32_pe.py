@@ -2130,6 +2130,82 @@ class CreateConfigExportLabelDedupTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class CreateConfigImportLabelDedupTest(unittest.TestCase):
+    def test_clashing_sanitized_import_labels_get_rva_suffix(self):
+        """Two imports from the same DLL with distinct mangled names
+        that sanitize to the same identifier must produce unique
+        symbol_addrs labels — splat rejects duplicates."""
+        # Layout: .text + .rdata where .rdata holds the import table:
+        #   0x00..0x28 : two IMAGE_IMPORT_DESCRIPTOR + null terminator
+        #   0x40..0x4F : DLL name "kernel32.dll\x00"
+        #   0x50..0x57 : ILT (two thunks + NUL)
+        #   0x60..0x67 : IAT  (two thunks + NUL, mirrors ILT)
+        #   0x70..    : hint/name records and the function names
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        body = bytearray(0x100)
+
+        ilt_rva = rdata_rva + 0x50
+        iat_rva = rdata_rva + 0x60
+        dll_rva = rdata_rva + 0x40
+        # Hint/name records.
+        hn1_rva = rdata_rva + 0x70
+        hn2_rva = rdata_rva + 0x80
+
+        # Descriptor 1: kernel32.dll with our two imports.
+        struct.pack_into(
+            "<IIIII", body, 0x00,
+            ilt_rva, 0, 0, dll_rva, iat_rva,
+        )
+        # NULL terminator descriptor.
+        struct.pack_into("<IIIII", body, 0x14, 0, 0, 0, 0, 0)
+
+        body[0x40 : 0x40 + 13] = b"kernel32.dll\x00"
+
+        # ILT entries (32-bit thunks since this is PE32).
+        struct.pack_into("<III", body, 0x50, hn1_rva, hn2_rva, 0)
+        struct.pack_into("<III", body, 0x60, hn1_rva, hn2_rva, 0)
+
+        # Hint/name records: each is WORD hint + NUL-terminated name.
+        body[0x70 : 0x70 + 2] = b"\x00\x00"
+        body[0x72 : 0x72 + 8] = b"foo@bar\x00"
+        body[0x80 : 0x80 + 2] = b"\x00\x00"
+        body[0x82 : 0x82 + 8] = b"foo$bar\x00"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x20},
+                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(0, 0), (rdata_rva, 0x100)],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-imp-dedup-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "imp_clash.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            txt = (tmpdir / "symbol_addrs.txt").read_text()
+            # First import wins as-is; second collides and gets RVA suffix.
+            self.assertIn("imp_kernel32_dll_foo_bar = 0x", txt)
+            self.assertIn("imp_kernel32_dll_foo_bar__rva", txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigEntrypointOmissionTest(unittest.TestCase):
     def test_dll_with_no_entrypoint_omits_entrypoint_symbol(self):
         """A DLL built without DllMain has AddressOfEntryPoint = 0. The
