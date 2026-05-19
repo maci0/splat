@@ -1975,10 +1975,23 @@ class WideStringDetectionTest(unittest.TestCase):
     def test_high_byte_nonzero_rejected(self):
         from src.splat.segtypes.win32.data import _scan_wide_string
 
-        # If the WCHAR's high byte is nonzero (extended chars), our
-        # cautious detector skips it to avoid false positives.
-        blob = b"\xC3\x00\xA9\x00\xC3\x00\xA9\x00\x00\x00"  # "éé"
+        # If the WCHAR's high byte is nonzero (codepoint > U+00FF — i.e.
+        # outside Basic Latin + Latin-1 Supplement, the conservative
+        # Western-language coverage zone), our cautious detector skips
+        # the run to avoid false positives.
+        # Polish 'ł' is U+0142 -> UTF-16LE bytes 0x42 0x01.
+        blob = b"\x42\x01\x42\x01\x42\x01\x42\x01\x00\x00"
         self.assertIsNone(_scan_wide_string(blob, 0))
+
+    def test_latin1_supplement_accepted(self):
+        from src.splat.segtypes.win32.data import _scan_wide_string
+
+        # Latin-1 Supplement (U+00A0 .. U+00FF) covers German umlauts,
+        # French accents, Spanish ñ — common in localised resources.
+        # 'Müller' is M ü l l e r -> 4D 00 FC 00 6C 00 6C 00 65 00 72 00.
+        blob = b"\x4D\x00\xFC\x00\x6C\x00\x6C\x00\x65\x00\x72\x00\x00\x00"
+        end = _scan_wide_string(blob, 0)
+        self.assertEqual(end, len(blob))
 
 
 class Win32SegBssTest(unittest.TestCase):

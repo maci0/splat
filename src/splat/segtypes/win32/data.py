@@ -75,7 +75,10 @@ def _scan_wide_string(data: bytes, start: int) -> Optional[int]:
         if lo == 0:
             # WCHAR terminator.
             break
-        if not _is_string_byte(lo):
+        # ASCII control/printable subset OR Latin-1 supplement printables
+        # (0xA0–0xFF, NBSP through ÿ). Covers German umlauts, accented
+        # French chars, Spanish ñ, etc. — common in localised resources.
+        if not (_is_string_byte(lo) or 0xA0 <= lo <= 0xFF):
             return None
         count += 1
         i += 2
