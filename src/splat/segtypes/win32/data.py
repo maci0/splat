@@ -14,6 +14,16 @@ from ...util import options
 STRING_MIN_LEN = 4
 
 
+def _ptr_layout(is_pe32_plus: bool):
+    """Per-bitness pointer-slot constants for the data segment:
+    (size_bytes, struct_fmt, asm_directive, hex_print_width).
+    PE32 uses 4-byte slots emitted as `.long 0xXXXXXXXX`; PE32+
+    uses 8-byte slots emitted as `.quad 0xXXXXXXXXXXXXXXXX`."""
+    if is_pe32_plus:
+        return 8, "<Q", ".quad", 16
+    return 4, "<I", ".long", 8
+
+
 def _is_string_byte(b: int) -> bool:
     # ASCII control/printable subset OR Latin-1 Supplement printables.
     # Mirrors the wide-string scanner; covers localised ANSI resources
@@ -300,8 +310,7 @@ class Win32SegData(CommonSegment):
             0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD,               # clc/stc/cli/sti/cld/std (rare leaf)
         }
         offsets: List[int] = []
-        ptr_size = 8 if pe.is_pe32_plus else 4
-        ptr_fmt = "<Q" if pe.is_pe32_plus else "<I"
+        ptr_size, ptr_fmt, _, _ = _ptr_layout(pe.is_pe32_plus)
         start = (-self.vram_start) & (ptr_size - 1)
 
         def looks_like_function(target: int) -> bool:
@@ -351,11 +360,9 @@ class Win32SegData(CommonSegment):
         byte runs; strings win when no pointer overlaps."""
         from ...platforms import win32 as win32_platform
 
-        is_pe32_plus = win32_platform.info.is_pe32_plus
-        ptr_size = 8 if is_pe32_plus else 4
-        ptr_fmt = "<Q" if is_pe32_plus else "<I"
-        ptr_directive = ".quad" if is_pe32_plus else ".long"
-        ptr_width = 16 if is_pe32_plus else 8
+        ptr_size, ptr_fmt, ptr_directive, ptr_width = _ptr_layout(
+            win32_platform.info.is_pe32_plus
+        )
 
         ptr_set = set(pointer_offsets)
         lines: List[str] = []
