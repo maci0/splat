@@ -1947,6 +1947,20 @@ class PERelocsTest(unittest.TestCase):
         self.assertEqual(pe.pointer_rvas, {0x3010, 0x3020})
 
 
+class ParsePEFarPeOffsetTest(unittest.TestCase):
+    def test_e_lfanew_pointing_past_file_end_rejected(self):
+        """A fuzzed MZ header with e_lfanew = 0xFFFFFFFF (or any value
+        pointing past end-of-file) must reject cleanly rather than
+        crash on the slice read. parse_pe calls log.error which is
+        NoReturn (SystemExit)."""
+        buf = bytearray(0x40)
+        buf[0:2] = b"MZ"
+        # Set e_lfanew (file offset 0x3C) to a huge value.
+        struct.pack_into("<I", buf, 0x3C, 0xFFFFFFFF)
+        with self.assertRaises(SystemExit):
+            win32_platform.parse_pe(bytes(buf))
+
+
 class EscapeStringTest(unittest.TestCase):
     """`_escape_string` produces the same GAS-compatible escape forms
     consistently across the data segment's `.asciz` emission and the
