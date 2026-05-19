@@ -390,12 +390,18 @@ def create_win32_config(exe_path: Path, exe_bytes: bytes):
 
     sha1 = hashlib.sha1(exe_bytes).hexdigest()
 
+    # Quote paths to survive YAML special characters (spaces, ':', '#'
+    # are all syntactically meaningful when unquoted).
+    def _yaml_quote(s: object) -> str:
+        text = str(s)
+        return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
     header = f"""\
 # name: {exe_path.name}
 sha1: {sha1}
 options:
   basename: {basename}
-  target_path: {exe_path}
+  target_path: {_yaml_quote(exe_path)}
   base_path: .
   platform: win32
   compiler: MSVC6

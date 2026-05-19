@@ -2616,6 +2616,57 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigYamlQuotedPathTest(unittest.TestCase):
+    def test_target_path_with_spaces_is_quoted_in_yaml(self):
+        """A binary located at a path with spaces (or colons / hashes —
+        all YAML-significant unquoted) must not corrupt the generated
+        splat YAML. The header writes `target_path` as a quoted string."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        body = b"\x00" * 0x10
+        size_of_opt = 0xE0
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, size_of_opt, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        sec1 = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        sec2 = _section_header(
+            b".rdata", 0x10, rdata_rva, FILE_ALIGN, rdata_rptr, 0x40000040
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec1 + sec2
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN + body.ljust(
+            FILE_ALIGN, b"\x00"
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+        import yaml
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-spaces "))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            sp_path = tmpdir / "exe with spaces.dll"
+            sp_path.write_bytes(bytes(buf))
+            create_win32_config(sp_path, bytes(buf))
+            yaml_path = tmpdir / "exewithspaces.dll.yaml"
+            text = yaml_path.read_text()
+            # Quoted: surrounded by double quotes.
+            self.assertRegex(text, r'target_path:\s*"[^"]+exe with spaces\.dll"')
+            # And the YAML must still parse cleanly.
+            doc = yaml.safe_load(text)
+            self.assertIn("exe with spaces.dll", doc["options"]["target_path"])
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class Win32HeaderDataDirCountCapTest(unittest.TestCase):
     def test_oversize_num_dirs_in_header_dump_is_capped(self):
         """The structured header dump iterates NumberOfRvaAndSizes
