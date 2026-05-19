@@ -1456,6 +1456,49 @@ class PEOrdinalImportTest(unittest.TestCase):
 
 
 class PERelocsTest(unittest.TestCase):
+    def test_dir64_relocs(self):
+        """PE32+ binaries emit IMAGE_REL_BASED_DIR64 (type 10) entries.
+        Verify the parser accepts both HIGHLOW (type 3) and DIR64 (type 10)
+        in the same block — both flag the same `pointer_rvas` set."""
+        reloc_rva = 0x4000
+        reloc_rptr = FILE_ALIGN * 3
+        block = struct.pack("<II", 0x5000, 16) + struct.pack(
+            "<HHHH",
+            (10 << 12) | 0x008,    # DIR64
+            (10 << 12) | 0x020,    # DIR64
+            (3 << 12) | 0x040,     # HIGHLOW
+            0,                      # padding entry — must be ignored
+        )
+
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".reloc",
+                    "vsize": len(block),
+                    "vaddr": reloc_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": reloc_rptr,
+                    "chars": 0x42000040,
+                    "body": block,
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (reloc_rva, len(block)),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(pe.pointer_rvas, {0x5008, 0x5020, 0x5040})
+
     def test_multi_block_relocs(self):
         """Two reloc blocks across different 4 KB pages should both be
         captured, with type-0 padding skipped."""
