@@ -2694,6 +2694,56 @@ class Win32SegBssTest(unittest.TestCase):
         self.assertEqual(obj.reserved_size, 0)
 
 
+class ResolveExactEncodingTest(unittest.TestCase):
+    """Direct tests for the shared helper, complementing the segtype-
+    level inheritance test."""
+
+    def test_per_subsegment_yaml_wins(self):
+        self.assertTrue(
+            win32_platform.resolve_exact_encoding({"exact_encoding": True}, None)
+        )
+        self.assertFalse(
+            win32_platform.resolve_exact_encoding({"exact_encoding": False}, None)
+        )
+
+    def test_parent_yaml_used_when_subsegment_silent(self):
+        import types
+        parent = types.SimpleNamespace(yaml={"exact_encoding": True})
+        self.assertTrue(
+            win32_platform.resolve_exact_encoding({}, parent)
+        )
+        # Subsegment 'False' beats parent 'True'.
+        self.assertFalse(
+            win32_platform.resolve_exact_encoding(
+                {"exact_encoding": False}, parent
+            )
+        )
+
+    def test_default_returned_when_neither_speaks_up(self):
+        self.assertFalse(win32_platform.resolve_exact_encoding({}, None))
+        self.assertTrue(
+            win32_platform.resolve_exact_encoding({}, None, default=True)
+        )
+
+    def test_non_dict_yaml_is_silent(self):
+        # If the subsegment YAML is a list (the bare-tuple shorthand
+        # form), `isinstance(yaml, dict)` falls through; helper must
+        # not crash, just return the default.
+        self.assertFalse(
+            win32_platform.resolve_exact_encoding([0x200, "text", "main"], None)
+        )
+
+    def test_parent_without_yaml_attribute_handled(self):
+        # The parent argument is sometimes None at runtime; sometimes
+        # a Segment-shaped object whose `.yaml` is a list. Both must
+        # fall through to the default cleanly.
+        import types
+        no_yaml = types.SimpleNamespace()
+        list_yaml = types.SimpleNamespace(yaml=[])
+        self.assertFalse(win32_platform.resolve_exact_encoding({}, no_yaml))
+        self.assertFalse(win32_platform.resolve_exact_encoding({}, list_yaml))
+
+
 class Win32ExactEncodingInheritanceTest(unittest.TestCase):
     def test_inheritance_chain(self):
         """exact_encoding resolves in priority order:
