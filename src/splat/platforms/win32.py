@@ -728,11 +728,13 @@ def ptr_layout(is_pe32_plus: bool) -> Tuple[int, str, str, int]:
     return 4, "<I", ".long", 8
 
 
-def _thunk_layout(pe: PEInfo) -> Tuple[int, int, str]:
+def _thunk_layout(is_pe32_plus: bool) -> Tuple[int, int, str]:
     """Per-bitness thunk-array constants: (size_bytes, ordinal_flag, struct_fmt).
     PE32 thunks are 32-bit DWORDs with the ordinal flag at bit 31;
-    PE32+ thunks are 64-bit QWORDs with the ordinal flag at bit 63."""
-    if pe.is_pe32_plus:
+    PE32+ thunks are 64-bit QWORDs with the ordinal flag at bit 63.
+    Signature matches `ptr_layout` for symmetry — both take a bool
+    rather than a full PEInfo object."""
+    if is_pe32_plus:
         return 8, 1 << 63, "<Q"
     return 4, 1 << 31, "<I"
 
@@ -800,7 +802,7 @@ def parse_imports(data: bytes, pe: PEInfo) -> None:
     if imp_off is None:
         return
 
-    thunk_size, ordinal_flag, thunk_fmt = _thunk_layout(pe)
+    thunk_size, ordinal_flag, thunk_fmt = _thunk_layout(pe.is_pe32_plus)
 
     desc_off = imp_off
     # Cap descriptor count at a sane maximum to bound parse cost on
@@ -849,7 +851,7 @@ def parse_delay_imports(data: bytes, pe: PEInfo) -> None:
     if di_off is None:
         return
 
-    thunk_size, ordinal_flag, thunk_fmt = _thunk_layout(pe)
+    thunk_size, ordinal_flag, thunk_fmt = _thunk_layout(pe.is_pe32_plus)
 
     desc_off = di_off
     end = di_off + di_size
