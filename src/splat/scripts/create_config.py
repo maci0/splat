@@ -506,6 +506,15 @@ options:
     # the disassembly labels them. Some DLLs are built without DllMain and
     # leave AddressOfEntryPoint = 0 — skip the entrypoint symbol in that
     # case so we don't emit a label pointing at the PE header.
+    def _sanitize_id(s: str) -> str:
+        out = "".join(c if c.isalnum() or c == "_" else "_" for c in s)
+        # GAS rejects labels that begin with a digit; prefix with `_` so
+        # leading-digit exports (e.g. legacy D3D '1' or fortified
+        # '__GSHandlerCheck') still produce valid identifiers.
+        if out and out[0].isdigit():
+            out = "_" + out
+        return out
+
     symbol_addrs: List[str] = []
     if pe.entry_point_rva:
         symbol_addrs.append(
@@ -519,9 +528,7 @@ options:
             if exp.forwarder is not None:
                 continue
             name = exp.name or f"export_{exp.ordinal}"
-            # Sanitize: some DLLs export C++ mangled names with characters
-            # that GAS can't ingest as labels.
-            safe = "".join(c if c.isalnum() or c == "_" else "_" for c in name)
+            safe = _sanitize_id(name)
             # C++ overloads can have distinct mangled names that collapse to
             # the same sanitized label. Suffix the ordinal to disambiguate.
             if safe in seen_labels:
@@ -538,16 +545,11 @@ options:
             symbol_addrs.append("// Forwarded exports (live outside this DLL)")
             for exp in forwarders:
                 name = exp.name or f"export_{exp.ordinal}"
-                safe = "".join(
-                    c if c.isalnum() or c == "_" else "_" for c in name
-                )
+                safe = _sanitize_id(name)
                 # No real VA — record as a comment so users see the mapping.
                 symbol_addrs.append(
                     f"// {safe}  ->  {exp.forwarder}  (ordinal {exp.ordinal})"
                 )
-
-    def _sanitize_id(s: str) -> str:
-        return "".join(c if c.isalnum() or c == "_" else "_" for c in s)
 
     if pe.imports:
         symbol_addrs.append("")
