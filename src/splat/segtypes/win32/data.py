@@ -14,11 +14,6 @@ from ...util import options
 STRING_MIN_LEN = 4
 
 
-def _ptr_layout(is_pe32_plus: bool):
-    """Thin wrapper around `win32.ptr_layout` so call sites in this
-    module don't need to import the platform helper directly."""
-    from ...platforms.win32 import ptr_layout
-    return ptr_layout(is_pe32_plus)
 
 
 def _is_string_byte(b: int) -> bool:
@@ -307,7 +302,7 @@ class Win32SegData(CommonSegment):
             0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD,               # clc/stc/cli/sti/cld/std (rare leaf)
         }
         offsets: List[int] = []
-        ptr_size, ptr_fmt, _, _ = _ptr_layout(pe.is_pe32_plus)
+        ptr_size, ptr_fmt, _, _ = win32_platform.ptr_layout(pe.is_pe32_plus)
         start = (-self.vram_start) & (ptr_size - 1)
 
         def looks_like_function(target: int) -> bool:
@@ -357,7 +352,7 @@ class Win32SegData(CommonSegment):
         byte runs; strings win when no pointer overlaps."""
         from ...platforms import win32 as win32_platform
 
-        ptr_size, ptr_fmt, ptr_directive, ptr_width = _ptr_layout(
+        ptr_size, ptr_fmt, ptr_directive, ptr_width = win32_platform.ptr_layout(
             win32_platform.info.is_pe32_plus
         )
 
