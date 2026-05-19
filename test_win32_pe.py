@@ -1,13 +1,47 @@
 #!/usr/bin/env python3
-"""Unit tests for the win32 PE parsers.
+"""Unit tests for the win32 PE platform.
 
-Builds tiny PE32 byte blobs in memory and asserts the structured parse
-output matches. Touches:
+Builds tiny PE32 / PE32+ byte blobs in memory and asserts the parsed,
+labelled, or YAML-emitted output is what the spec dictates. Coverage:
 
-- `parse_pe`            (DOS / COFF / optional header / section table)
-- `parse_exports`       (data directory 0)
-- `parse_imports`       (data directory 1)
-- `parse_relocations`   (data directory 5)
+Parsers — every data directory + the structural headers:
+  - `parse_pe`              DOS / COFF / optional header / section table,
+                            fuzz-cap edge cases (bad e_lfanew, runt opt
+                            header, oversize NumberOfRvaAndSizes,
+                            machine/magic mismatch, etc.)
+  - `parse_exports`         data dir 0 — named / ordinal-only / forwarders
+  - `parse_imports`         data dir 1 — eager IAT, PE32+ thunks, hint fallback
+  - `parse_resources`       data dir 2 — type/name/lang walk + depth cap
+  - `parse_exception_table` data dir 3 — PE32+ RUNTIME_FUNCTION records
+  - `parse_relocations`     data dir 5 — HIGHLOW / DIR64
+  - `parse_debug`           data dir 6 — RSDS / NB10 CodeView records
+  - `parse_tls`             data dir 9 — callback array walk
+  - `parse_load_config`     data dir 10 — /GS cookie, SafeSEH, /guard:cf
+  - `parse_bound_imports`   data dir 11 — descriptors + forwarder refs
+  - `parse_delay_imports`   data dir 13 — v1 / v2 descriptor chains
+
+Label generation helpers (centralised in `platforms.win32`):
+  - `sanitize_label`        punctuation / leading-digit handling
+  - `compute_iat_labels`    eager + delay IAT slot deduplication
+  - `compute_export_labels` named + reserved-set seed collision
+
+YAML emission (`create_win32_config`):
+  - section classification (text / data / rodata / bss / pdata / bin)
+  - tail-section sort (COFF symtab + Authenticode signature in file order)
+  - symbol categories (entrypoint, exports, imports, delay-imports, TLS
+    callbacks, SafeSEH, CFG targets, /GS cookie)
+  - pathological inputs (BSS-only PEs, resource-only DLLs, all-forwarder
+    shims, phantom raw-pointer-zero sections, spaces in filenames)
+
+Detector helpers (`segtypes.win32.data`):
+  - `_is_string_byte`, `_scan_string`, `_scan_wide_string`,
+    `_escape_string`, `_decode_wide` — narrow + wide ANSI string
+    recognition including Latin-1 Supplement.
+
+Header rendering (`segtypes.win32.header`):
+  - `_decode_flags` (unknown-bit surfacing), `_dump_optional_header`
+    bound checks for runt headers, `_MACHINE_TYPES` / `_SUBSYSTEMS` /
+    `_DLL_CHARACTERISTICS` table coverage.
 """
 
 import struct
