@@ -2489,6 +2489,38 @@ class PEEdgeCasesTest(unittest.TestCase):
         self.assertEqual(pe.entry_point_rva, 0)
         # Should not crash later when consumers check entry_point_va.
 
+    def test_safeseh_count_capped(self):
+        """Fuzzed LoadConfig with SEHandlerCount = 0xFFFFFFFF must not
+        loop 4 billion times. Parser caps at 1M; loop body's per-entry
+        bounds check then terminates early on EOF."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        seh_table_va = IMAGE_BASE + rdata_rva + 0x50
+        lc_size = 0x48
+        body = bytearray(0x100)
+        struct.pack_into("<I", body, 0, lc_size)
+        struct.pack_into("<I", body, 0x3C, IMAGE_BASE + rdata_rva + 0x60)
+        struct.pack_into("<I", body, 0x40, seh_table_va)
+        struct.pack_into("<I", body, 0x44, 0xFFFFFFFF)
+        # Two real RVAs followed by garbage / unmapped territory.
+        struct.pack_into("<II", body, 0x50, 0x1010, 0x1020)
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x100, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x100},
+                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(0, 0)] * 10 + [(rdata_rva, lc_size)],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        # Bounded reads stop once EOF is hit; we still cap iteration.
+        self.assertLessEqual(len(pe.safe_seh_handlers), 1_000_000)
+        # First two genuine RVAs survive.
+        self.assertEqual(pe.safe_seh_handlers[:2], [0x1010, 0x1020])
+
     def test_export_count_capped(self):
         """Fuzzed export directory with NumberOfFunctions = 0xFFFFFFFF.
         Parser must cap iteration to a sane limit so it doesn't scan

@@ -707,7 +707,9 @@ def parse_load_config(data: bytes, pe: PEInfo) -> None:
         # SEHandlerTable is a VA (already absolute), array of DWORD RVAs.
         table_off = pe.va_to_file_offset(seh_table_va)
         if table_off is not None:
-            for i in range(seh_count):
+            # Real binaries declare hundreds of SEH handlers at most;
+            # cap at 1M for fuzz safety.
+            for i in range(min(seh_count, 1_000_000)):
                 entry_off = table_off + i * 4
                 if entry_off + 4 > len(data):
                     break
@@ -736,7 +738,9 @@ def _read_cfg_table(data: bytes, pe: PEInfo, table_va: int, count: int) -> None:
     # entry, capped to 7. Stride is 4 + extra_bytes.
     extra = (pe.cfg_flags >> 28) & 0x0F
     stride = 4 + min(extra, 7)
-    for i in range(count):
+    # /guard:cf tables can be large (Windows 10 ntdll has ~40k entries)
+    # but a megabyte of guarded functions is well beyond realistic.
+    for i in range(min(count, 1_000_000)):
         entry_off = table_off + i * stride
         if entry_off + 4 > len(data):
             break
