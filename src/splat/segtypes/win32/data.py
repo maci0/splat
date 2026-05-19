@@ -220,6 +220,11 @@ class Win32SegData(CommonSegment):
                     i = j
                     pending_start = i
                     continue
+                # Sub-threshold zero run — skip past the whole thing
+                # rather than re-scanning every byte; saves O(MIN * N) on
+                # data with many short zero clusters.
+                i = j
+                continue
             i += 1
         if pending_start < end:
             for k in range(pending_start, end, 16):
