@@ -579,12 +579,15 @@ options:
     # Build a {ordinal: label} lookup so we can emit them in iteration
     # order while still using the centralised dedup-aware map.
     va_to_label = export_labels
-    if pe.exports:
+    # Only print the "// Exports from X" header when there's at least one
+    # non-forwarder export — DLLs that re-export everything (e.g.
+    # apisetschema, downlevel shims) would otherwise emit a header with
+    # zero following rows.
+    named_exports = [e for e in pe.exports if e.forwarder is None]
+    if named_exports:
         symbol_addrs.append("")
         symbol_addrs.append(f"// Exports from {pe.export_dll_name or exe_path.name}")
-        for exp in pe.exports:
-            if exp.forwarder is not None:
-                continue
+        for exp in named_exports:
             va = pe.image_base + exp.rva
             safe = va_to_label.get(va)
             if safe is None:
@@ -593,17 +596,17 @@ options:
             if exp.name and safe != exp.name:
                 trailing += f" (original {exp.name})"
             symbol_addrs.append(f"{safe} = 0x{va:08X}; {trailing}")
-        forwarders = [e for e in pe.exports if e.forwarder is not None]
-        if forwarders:
-            symbol_addrs.append("")
-            symbol_addrs.append("// Forwarded exports (live outside this DLL)")
-            for exp in forwarders:
-                name = exp.name or f"export_{exp.ordinal}"
-                safe = _sanitize_id(name)
-                # No real VA — record as a comment so users see the mapping.
-                symbol_addrs.append(
-                    f"// {safe}  ->  {exp.forwarder}  (ordinal {exp.ordinal})"
-                )
+    forwarders = [e for e in pe.exports if e.forwarder is not None]
+    if forwarders:
+        symbol_addrs.append("")
+        symbol_addrs.append("// Forwarded exports (live outside this DLL)")
+        for exp in forwarders:
+            name = exp.name or f"export_{exp.ordinal}"
+            safe = _sanitize_id(name)
+            # No real VA — record as a comment so users see the mapping.
+            symbol_addrs.append(
+                f"// {safe}  ->  {exp.forwarder}  (ordinal {exp.ordinal})"
+            )
 
     iat_labels = _w32.compute_iat_labels(pe)
     if pe.imports:

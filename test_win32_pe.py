@@ -1947,6 +1947,73 @@ class PERelocsTest(unittest.TestCase):
         self.assertEqual(pe.pointer_rvas, {0x3010, 0x3020})
 
 
+class CreateConfigAllForwardersTest(unittest.TestCase):
+    def test_dll_with_only_forwarder_exports_skips_exports_header(self):
+        """A DLL whose every export is a forwarder (e.g. apisetschema,
+        downlevel shims) should not emit a '// Exports from X' header
+        followed by zero rows. Only the '// Forwarded exports' block
+        below it should appear."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        funcs_rva = rdata_rva + 0x28
+        names_rva = funcs_rva + 0x4
+        ords_rva = names_rva + 0x4
+        name_str_rva = rdata_rva + 0x40
+        dll_name_rva = rdata_rva + 0x50
+        # The forwarder RVA must point INSIDE the export directory range
+        # for it to be classified as a forwarder. Export dir is at
+        # rdata_rva..rdata_rva+0x80; put the forwarder string there.
+        fwd_rva = rdata_rva + 0x60
+        body = bytearray(0x80)
+        struct.pack_into(
+            "<IIHHIIIIIII", body, 0x00,
+            0, 0, 0, 0,
+            dll_name_rva,
+            1, 1, 1,
+            funcs_rva, names_rva, ords_rva,
+        )
+        struct.pack_into("<I", body, 0x28, fwd_rva)  # forwarder RVA
+        struct.pack_into("<I", body, 0x2C, name_str_rva)
+        struct.pack_into("<H", body, 0x30, 0)
+        body[0x40 : 0x40 + 8] = b"OldFunc\x00"
+        body[0x50 : 0x50 + 11] = b"shim.dll\x00\x00\x00"
+        body[0x60 : 0x60 + 16] = b"KERNEL32.NewName"
+
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x20},
+                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(rdata_rva, 0x80)],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-shim-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            dll = tmpdir / "shim.dll"
+            dll.write_bytes(pe_bytes)
+            create_win32_config(dll, pe_bytes)
+            txt = (tmpdir / "symbol_addrs.txt").read_text()
+            # No "// Exports from" header since no named non-forwarder exports.
+            self.assertNotIn("// Exports from", txt)
+            # Forwarder block should still appear.
+            self.assertIn("// Forwarded exports", txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class ParsePEFarPeOffsetTest(unittest.TestCase):
     def test_e_lfanew_pointing_past_file_end_rejected(self):
         """A fuzzed MZ header with e_lfanew = 0xFFFFFFFF (or any value
