@@ -11,7 +11,7 @@ support is geared at PE32 / i386.
 
 from dataclasses import dataclass, field
 import struct
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from ..util import log
 
@@ -298,12 +298,12 @@ def sanitize_label(s: str) -> str:
     return out
 
 
-def compute_iat_labels(pe: PEInfo) -> "dict":
+def compute_iat_labels(pe: PEInfo) -> Dict[int, str]:
     """Return a {slot_va: label} mapping for every IAT (eager + delay)
     slot. Labels match what `create_win32_config` writes to
     symbol_addrs.txt — including dedup-on-collision behaviour — so
     disassembly references resolve to the same identifiers."""
-    out: dict = {}
+    out: Dict[int, str] = {}
     seen_eager: set = set()
     for imp in pe.imports:
         slot_va = pe.image_base + imp.iat_rva
@@ -334,14 +334,14 @@ def compute_iat_labels(pe: PEInfo) -> "dict":
 
 
 def compute_export_labels(
-    pe: PEInfo, reserved: Optional["set"] = None
-) -> "dict":
+    pe: PEInfo, reserved: Optional[Set[str]] = None
+) -> Dict[int, str]:
     """Return a {export_va: label} mapping for every non-forwarder
     export. `reserved` is a pre-seeded set of labels already in use
     (e.g. {'entrypoint'}); colliding exports get an ordinal suffix.
     Matches create_win32_config's symbol_addrs emission."""
-    out: dict = {}
-    seen: set = set(reserved or set())
+    out: Dict[int, str] = {}
+    seen: Set[str] = set(reserved or set())
     for exp in pe.exports:
         if exp.forwarder is not None:
             continue
