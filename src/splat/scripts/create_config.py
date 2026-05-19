@@ -716,6 +716,8 @@ options:
         print("Writing symbol_addrs.txt")
         f.write(
             "// Visit https://github.com/ethteck/splat/wiki/Adding-Symbols for documentation about this file\n"
+            f"// Generated from {exe_path.name} (sha1 {sha1[:12]}...) by create_win32_config.\n"
+            "// Edits are preserved across re-runs only via merging in a separate symbols file.\n"
         )
         body = "\n".join(symbol_addrs)
         f.write(body)
