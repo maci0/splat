@@ -208,6 +208,66 @@ info: PEInfo = PEInfo()
 raw_image: bytes = b""
 
 
+def sanitize_label(s: str) -> str:
+    """Canonical GAS-label sanitization shared by every site that emits
+    labels derived from PE strings. Non-alphanumeric chars become '_';
+    leading-digit identifiers (GAS-invalid) are prefixed with '_'."""
+    out = "".join(c if c.isalnum() or c == "_" else "_" for c in s)
+    if out and out[0].isdigit():
+        out = "_" + out
+    return out
+
+
+def compute_iat_labels(pe: PEInfo) -> "dict":
+    """Return a {slot_va: label} mapping for every IAT (eager + delay)
+    slot. Labels match what `create_win32_config` writes to
+    symbol_addrs.txt — including dedup-on-collision behaviour — so
+    disassembly references resolve to the same identifiers."""
+    out: dict = {}
+    seen_eager: set = set()
+    for imp in pe.imports:
+        slot_va = pe.image_base + imp.iat_rva
+        nm = imp.name or f"ordinal_{imp.ordinal}"
+        safe = sanitize_label(nm)
+        full = f"imp_{sanitize_label(imp.dll)}_{safe}"
+        if full in seen_eager:
+            full = f"{full}__rva{imp.iat_rva:X}"
+        seen_eager.add(full)
+        out[slot_va] = full
+    seen_delay: set = set()
+    for imp in pe.delay_imports:
+        slot_va = pe.image_base + imp.iat_rva
+        nm = imp.name or f"ordinal_{imp.ordinal}"
+        safe = sanitize_label(nm)
+        full = f"dimp_{sanitize_label(imp.dll)}_{safe}"
+        if full in seen_delay:
+            full = f"{full}__rva{imp.iat_rva:X}"
+        seen_delay.add(full)
+        out[slot_va] = full
+    return out
+
+
+def compute_export_labels(
+    pe: PEInfo, reserved: Optional["set"] = None
+) -> "dict":
+    """Return a {export_va: label} mapping for every non-forwarder
+    export. `reserved` is a pre-seeded set of labels already in use
+    (e.g. {'entrypoint'}); colliding exports get an ordinal suffix.
+    Matches create_win32_config's symbol_addrs emission."""
+    out: dict = {}
+    seen: set = set(reserved or set())
+    for exp in pe.exports:
+        if exp.forwarder is not None:
+            continue
+        nm = exp.name or f"export_{exp.ordinal}"
+        safe = sanitize_label(nm)
+        if safe in seen:
+            safe = f"{safe}__ord{exp.ordinal}"
+        seen.add(safe)
+        out[pe.image_base + exp.rva] = safe
+    return out
+
+
 def parse_pe(data: bytes) -> PEInfo:
     if len(data) < 0x40 or data[:2] != DOS_MAGIC:
         log.error("win32 target does not start with an MZ DOS header")

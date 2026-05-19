@@ -520,39 +520,30 @@ options:
     # the disassembly labels them. Some DLLs are built without DllMain and
     # leave AddressOfEntryPoint = 0 — skip the entrypoint symbol in that
     # case so we don't emit a label pointing at the PE header.
-    def _sanitize_id(s: str) -> str:
-        out = "".join(c if c.isalnum() or c == "_" else "_" for c in s)
-        # GAS rejects labels that begin with a digit; prefix with `_` so
-        # leading-digit exports (e.g. legacy D3D '1' or fortified
-        # '__GSHandlerCheck') still produce valid identifiers.
-        if out and out[0].isdigit():
-            out = "_" + out
-        return out
+    from ..platforms import win32 as _w32
+    _sanitize_id = _w32.sanitize_label
 
     symbol_addrs: List[str] = []
-    # Single label-namespace shared across entrypoint + exports — splat
-    # rejects multiple symbol_addrs.txt rows that bind the same label.
-    seen_labels: set = set()
     if pe.entry_point_rva:
         symbol_addrs.append(
             f"entrypoint = 0x{pe.entry_point_va:08X}; // type:func"
         )
-        seen_labels.add("entrypoint")
+    export_labels = _w32.compute_export_labels(
+        pe, reserved={"entrypoint"} if pe.entry_point_rva else set()
+    )
+    # Build a {ordinal: label} lookup so we can emit them in iteration
+    # order while still using the centralised dedup-aware map.
+    va_to_label = export_labels
     if pe.exports:
         symbol_addrs.append("")
         symbol_addrs.append(f"// Exports from {pe.export_dll_name or exe_path.name}")
         for exp in pe.exports:
             if exp.forwarder is not None:
                 continue
-            name = exp.name or f"export_{exp.ordinal}"
-            safe = _sanitize_id(name)
-            # C++ overloads can have distinct mangled names that collapse to
-            # the same sanitized label. Suffix the ordinal to disambiguate.
-            # Also catches an export literally named "entrypoint".
-            if safe in seen_labels:
-                safe = f"{safe}__ord{exp.ordinal}"
-            seen_labels.add(safe)
             va = pe.image_base + exp.rva
+            safe = va_to_label.get(va)
+            if safe is None:
+                continue
             trailing = f"// type:func -- ordinal {exp.ordinal}"
             if exp.name and safe != exp.name:
                 trailing += f" (original {exp.name})"
@@ -569,22 +560,15 @@ options:
                     f"// {safe}  ->  {exp.forwarder}  (ordinal {exp.ordinal})"
                 )
 
+    iat_labels = _w32.compute_iat_labels(pe)
     if pe.imports:
         symbol_addrs.append("")
         symbol_addrs.append("// IAT slots (each `call dword ptr [<va>]` reaches one of these)")
-        seen_imp: set = set()
         for imp in pe.imports:
-            label = imp.name or f"ordinal_{imp.ordinal}"
-            safe = _sanitize_id(label)
-            # DLL names may contain hyphens, spaces, plus signs etc. that
-            # GAS rejects in labels — sanitize the entire stem.
-            full = f"imp_{_sanitize_id(imp.dll)}_{safe}"
-            # Duplicate slot VAs shouldn't happen in a well-formed IAT,
-            # but mangled-name collisions can still collide labels.
-            if full in seen_imp:
-                full = f"{full}__rva{imp.iat_rva:X}"
-            seen_imp.add(full)
             slot_va = pe.image_base + imp.iat_rva
+            full = iat_labels.get(slot_va)
+            if full is None or not full.startswith("imp_"):
+                continue
             trailing = f"// type:u32 -- import from {imp.dll}"
             if imp.ordinal is not None:
                 trailing += f" ordinal {imp.ordinal}"
@@ -593,15 +577,11 @@ options:
     if pe.delay_imports:
         symbol_addrs.append("")
         symbol_addrs.append("// Delay-load IAT slots (resolved on first call via __delayLoadHelper2)")
-        seen_dimp: set = set()
         for imp in pe.delay_imports:
-            label = imp.name or f"ordinal_{imp.ordinal}"
-            safe = _sanitize_id(label)
-            full = f"dimp_{_sanitize_id(imp.dll)}_{safe}"
-            if full in seen_dimp:
-                full = f"{full}__rva{imp.iat_rva:X}"
-            seen_dimp.add(full)
             slot_va = pe.image_base + imp.iat_rva
+            full = iat_labels.get(slot_va)
+            if full is None or not full.startswith("dimp_"):
+                continue
             trailing = f"// type:u32 -- delay-loaded import from {imp.dll}"
             if imp.ordinal is not None:
                 trailing += f" ordinal {imp.ordinal}"

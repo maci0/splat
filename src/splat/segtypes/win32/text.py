@@ -290,21 +290,9 @@ class Win32SegText(CommonSegment):
         # call_target so they can be renamed `<imp_name>_thunk` (or
         # `<imp_name>_thunk_<va>` if the same import has multiple thunks).
         # Map every IAT slot's VA (eager + delayed) to its canonical label.
-        iat_to_label: Dict[int, str] = {}
-        for imp in pe.imports:
-            slot_va = pe.image_base + imp.iat_rva
-            label = imp.name or f"ordinal_{imp.ordinal}"
-            safe = "".join(c if c.isalnum() or c == "_" else "_" for c in label)
-            iat_to_label[slot_va] = (
-                f"imp_{imp.dll.replace('.', '_')}_{safe}"
-            )
-        for imp in pe.delay_imports:
-            slot_va = pe.image_base + imp.iat_rva
-            label = imp.name or f"ordinal_{imp.ordinal}"
-            safe = "".join(c if c.isalnum() or c == "_" else "_" for c in label)
-            iat_to_label[slot_va] = (
-                f"dimp_{imp.dll.replace('.', '_')}_{safe}"
-            )
+        iat_to_label: Dict[int, str] = dict(
+            win32_platform.compute_iat_labels(pe)
+        )
 
         # Pre-populate `synth_labels` with export and import names so DLLs
         # surface readable references (`call dword ptr [imp_..._CreateThread]`,
@@ -312,16 +300,12 @@ class Win32SegText(CommonSegment):
         # `symbol_addrs.txt`. The same map is consulted by both `label_for`
         # (label emission) and `resolve_sym` (op_str substitution).
         synth_labels: Dict[int, str] = {}
-        for exp in pe.exports:
-            if exp.forwarder is not None:
-                continue
-            if not exp.name:
-                continue
-            va = pe.image_base + exp.rva
-            if not (vram <= va < seg_end):
-                continue
-            safe = "".join(c if c.isalnum() or c == "_" else "_" for c in exp.name)
-            synth_labels[va] = safe
+        export_labels = win32_platform.compute_export_labels(
+            pe, reserved={"entrypoint"} if pe.entry_point_rva else set()
+        )
+        for va, safe in export_labels.items():
+            if vram <= va < seg_end:
+                synth_labels[va] = safe
         # Imports live in .rdata, not .text — but they're referenced from
         # within .text via absolute memory operands, so `resolve_sym` needs
         # to see them too. Delayed-imports get the same treatment with a
