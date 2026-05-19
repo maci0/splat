@@ -2629,6 +2629,48 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class ParseImportsHintFallbackTest(unittest.TestCase):
+    def test_empty_name_falls_back_to_hint_as_ordinal(self):
+        """When a hint/name record has a zero-byte name string (malformed
+        or stripped), parse_imports must capture the 16-bit hint as the
+        import's ordinal so the IAT slot still gets a meaningful
+        `imp_X_ordinal_N` label instead of `imp_X_ordinal_None`."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        body = bytearray(0x100)
+        ilt_rva = rdata_rva + 0x50
+        iat_rva = rdata_rva + 0x60
+        dll_rva = rdata_rva + 0x30
+        hn_rva = rdata_rva + 0x70
+        # Descriptor 1 + null terminator.
+        struct.pack_into("<IIIII", body, 0x00, ilt_rva, 0, 0, dll_rva, iat_rva)
+        struct.pack_into("<IIIII", body, 0x14, 0, 0, 0, 0, 0)
+        body[0x30 : 0x30 + 9] = b"empty.dll"
+        # ILT/IAT: single thunk → hint/name record at hn_rva, then NUL.
+        struct.pack_into("<II", body, 0x50, hn_rva, 0)
+        struct.pack_into("<II", body, 0x60, hn_rva, 0)
+        # Hint/name: hint = 0x1234, name string = "" (just a NUL).
+        struct.pack_into("<H", body, 0x70, 0x1234)
+        body[0x72] = 0  # name terminator
+
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x20},
+                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(0, 0), (rdata_rva, 0x100)],
+        )
+
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(len(pe.imports), 1)
+        self.assertIsNone(pe.imports[0].name)
+        self.assertEqual(pe.imports[0].ordinal, 0x1234)
+
+
 class CreateConfigSecurityCookieTest(unittest.TestCase):
     def test_security_cookie_va_emits_symbol(self):
         """A binary with /GS enabled has a SecurityCookie VA in its

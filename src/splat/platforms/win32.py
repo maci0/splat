@@ -583,7 +583,15 @@ def parse_imports(data: bytes, pe: PEInfo) -> None:
             else:
                 hint_off = pe.rva_to_file_offset(thunk & 0x7FFFFFFF)
                 if hint_off is not None and hint_off + 2 < len(data):
-                    name = _read_cstr(data, hint_off + 2)
+                    # Capture the 16-bit hint too — useful as an
+                    # `ordinal_N` fallback when the name string is
+                    # missing or empty.
+                    hint = struct.unpack_from("<H", data, hint_off)[0]
+                    raw = _read_cstr(data, hint_off + 2)
+                    if raw:
+                        name = raw
+                    elif hint:
+                        ordinal = hint
             pe.imports.append(
                 PEImport(
                     dll=dll_name,
@@ -667,7 +675,12 @@ def parse_delay_imports(data: bytes, pe: PEInfo) -> None:
             else:
                 hint_off = pe.rva_to_file_offset(thunk & 0x7FFFFFFF)
                 if hint_off is not None and hint_off + 2 < len(data):
-                    name = _read_cstr(data, hint_off + 2)
+                    hint = struct.unpack_from("<H", data, hint_off)[0]
+                    raw = _read_cstr(data, hint_off + 2)
+                    if raw:
+                        name = raw
+                    elif hint:
+                        ordinal = hint
             pe.delay_imports.append(
                 PEImport(
                     dll=dll_name,
