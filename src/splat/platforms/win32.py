@@ -612,6 +612,51 @@ def parse_exports(data: bytes, pe: PEInfo) -> None:
         )
 
 
+def _walk_thunk_array(
+    data: bytes,
+    pe: PEInfo,
+    thunk_off: int,
+    slot_rva: int,
+    thunk_size: int,
+    thunk_fmt: str,
+    ordinal_flag: int,
+    dll_name: str,
+    dest: List[PEImport],
+) -> None:
+    """Walk a NULL-terminated array of import thunks (used by both
+    eager and delay-load import descriptors). Each thunk is either an
+    ordinal value (high-bit set) or an RVA pointing at a hint/name
+    record. Resolved entries are appended to `dest` as PEImport
+    records keyed by the corresponding IAT slot RVA."""
+    for _ in range(65536):
+        if thunk_off + thunk_size > len(data):
+            break
+        thunk = struct.unpack_from(thunk_fmt, data, thunk_off)[0]
+        if thunk == 0:
+            break
+        name: Optional[str] = None
+        ordinal: Optional[int] = None
+        if thunk & ordinal_flag:
+            ordinal = thunk & 0xFFFF
+        else:
+            hint_off = pe.rva_to_file_offset(thunk & 0x7FFFFFFF)
+            if hint_off is not None and hint_off + 2 < len(data):
+                # Capture the 16-bit hint as a fallback ordinal when
+                # the name string at hint+2 is empty (stripped binary
+                # or hand-crafted IAT).
+                hint = struct.unpack_from("<H", data, hint_off)[0]
+                raw = _read_cstr(data, hint_off + 2)
+                if raw:
+                    name = raw
+                elif hint:
+                    ordinal = hint
+        dest.append(
+            PEImport(dll=dll_name, name=name, ordinal=ordinal, iat_rva=slot_rva)
+        )
+        thunk_off += thunk_size
+        slot_rva += thunk_size
+
+
 def parse_imports(data: bytes, pe: PEInfo) -> None:
     """Populate `pe.imports` from data directory 1 (the Import Table).
 
@@ -659,39 +704,11 @@ def parse_imports(data: bytes, pe: PEInfo) -> None:
             # the entries we discover; skip the descriptor.
             continue
 
-        slot_rva = iat_rva
-        for _thunk_i in range(65536):
-            if thunk_off + thunk_size > len(data):
-                break
-            thunk = struct.unpack_from(thunk_fmt, data, thunk_off)[0]
-            if thunk == 0:
-                break
-            name: Optional[str] = None
-            ordinal: Optional[int] = None
-            if thunk & ordinal_flag:
-                ordinal = thunk & 0xFFFF
-            else:
-                hint_off = pe.rva_to_file_offset(thunk & 0x7FFFFFFF)
-                if hint_off is not None and hint_off + 2 < len(data):
-                    # Capture the 16-bit hint too — useful as an
-                    # `ordinal_N` fallback when the name string is
-                    # missing or empty.
-                    hint = struct.unpack_from("<H", data, hint_off)[0]
-                    raw = _read_cstr(data, hint_off + 2)
-                    if raw:
-                        name = raw
-                    elif hint:
-                        ordinal = hint
-            pe.imports.append(
-                PEImport(
-                    dll=dll_name,
-                    name=name,
-                    ordinal=ordinal,
-                    iat_rva=slot_rva,
-                )
-            )
-            thunk_off += thunk_size
-            slot_rva += thunk_size
+        _walk_thunk_array(
+            data, pe, thunk_off, iat_rva,
+            thunk_size, thunk_fmt, ordinal_flag,
+            dll_name, pe.imports,
+        )
 
 
 def parse_delay_imports(data: bytes, pe: PEInfo) -> None:
@@ -751,36 +768,11 @@ def parse_delay_imports(data: bytes, pe: PEInfo) -> None:
         if int_off is None or iat_rva == 0:
             continue
 
-        slot_rva = iat_rva
-        for _thunk_i in range(65536):
-            if int_off + thunk_size > len(data):
-                break
-            thunk = struct.unpack_from(thunk_fmt, data, int_off)[0]
-            if thunk == 0:
-                break
-            name: Optional[str] = None
-            ordinal: Optional[int] = None
-            if thunk & ordinal_flag:
-                ordinal = thunk & 0xFFFF
-            else:
-                hint_off = pe.rva_to_file_offset(thunk & 0x7FFFFFFF)
-                if hint_off is not None and hint_off + 2 < len(data):
-                    hint = struct.unpack_from("<H", data, hint_off)[0]
-                    raw = _read_cstr(data, hint_off + 2)
-                    if raw:
-                        name = raw
-                    elif hint:
-                        ordinal = hint
-            pe.delay_imports.append(
-                PEImport(
-                    dll=dll_name,
-                    name=name,
-                    ordinal=ordinal,
-                    iat_rva=slot_rva,
-                )
-            )
-            int_off += thunk_size
-            slot_rva += thunk_size
+        _walk_thunk_array(
+            data, pe, int_off, iat_rva,
+            thunk_size, thunk_fmt, ordinal_flag,
+            dll_name, pe.delay_imports,
+        )
 
 
 def parse_bound_imports(data: bytes, pe: PEInfo) -> None:
