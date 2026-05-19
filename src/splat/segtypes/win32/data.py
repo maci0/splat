@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ..common.segment import CommonSegment
-from ...util import log, options
+from ...util import options
 
 
 # Minimum length (excluding the NUL terminator) of an ASCII run that should
