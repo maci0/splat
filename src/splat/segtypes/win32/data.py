@@ -126,6 +126,19 @@ def _decode_wide(raw: bytes) -> str:
 
 
 class Win32SegData(CommonSegment):
+    """Writable initialised data segment (`.data` in MASM lingo).
+
+    Emits a `.byte` / `.long` / `.quad` representation of the
+    section bytes. Detects:
+    - pointer slots flagged by base-relocations (and synthesises a
+      `func_<va>` / `D_<va>` label for the target);
+    - NUL-terminated printable strings → `.asciz`;
+    - UTF-16LE wide-string runs → preserved as raw bytes with a
+      `/* L"..." */` preview comment;
+    - long zero runs → collapsed into `.space N` directives.
+    `exact_encoding: true` in the YAML disables every heuristic so
+    bytes pass through verbatim."""
+
     LINKER_SECTION = ".data"
     SECTION_FLAGS = "wa"
     # Detect printable NUL-terminated runs and emit them as `.asciz`.

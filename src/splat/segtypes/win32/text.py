@@ -75,6 +75,19 @@ _RIP_REL_RE = re.compile(
 
 
 class Win32SegText(CommonSegment):
+    """Executable code segment.
+
+    Two-pass disassembly through Capstone (x86 or x86_64 picked from
+    `pe.is_pe32_plus`): the first pass walks every direct call/jmp
+    target inside the segment to seed function / branch labels; the
+    second emits instructions with operand strings rewritten so
+    addresses, IAT slots, exports, and RIP-relative loads resolve
+    to readable labels. GAS-incompatible Capstone outputs are
+    rewritten to keep the `.s` output assemblable. With
+    `exact_encoding: true`, instruction bytes are emitted verbatim
+    (decoded mnemonic as a comment) so the output round-trips
+    byte-identically through GAS+objcopy."""
+
     # Default class-level kill switch. Per-segment YAML can override via
     # `exact_encoding: true` to force byte-identical reassembly: every
     # instruction is emitted as a `.byte` directive carrying the original
