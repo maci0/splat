@@ -2699,8 +2699,9 @@ class Win32ExactEncodingInheritanceTest(unittest.TestCase):
         subsegment YAML > parent code-group YAML > class default."""
         from src.splat.segtypes.win32.text import Win32SegText
         from src.splat.segtypes.win32.data import Win32SegData
+        from src.splat.segtypes.win32.pdata import Win32SegPdata
 
-        for cls in (Win32SegText, Win32SegData):
+        for cls in (Win32SegText, Win32SegData, Win32SegPdata):
             # Instantiate manually (bypass splat's segment factory).
             obj = cls.__new__(cls)
             obj.yaml = {}
