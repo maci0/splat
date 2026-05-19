@@ -1664,6 +1664,23 @@ class PEEdgeCasesTest(unittest.TestCase):
         self.assertIsNone(pe.va_to_file_offset(0x7FFFFFFF))
         self.assertIsNone(pe.rva_to_file_offset(0x7FFFFFFF))
 
+    def test_zero_sections(self):
+        """Synthetic PE with NumberOfSections=0 — parser should accept
+        and downstream rva_to_file_offset should return None for any
+        non-trivial RVA without crashing."""
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 0, 0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0, data_dirs=())
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        pe = win32_platform.parse_pe(bytes(header))
+        self.assertEqual(pe.num_sections, 0)
+        self.assertEqual(len(pe.sections), 0)
+        self.assertIsNone(pe.rva_to_file_offset(0x1000))
+
     def test_no_entrypoint(self):
         """Resource-only DLL has entry_point_rva == 0."""
         # We need to override the standard `_build_pe` entry_rva=0x1000
