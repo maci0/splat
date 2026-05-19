@@ -115,11 +115,24 @@ class Win32SegPdata(CommonSegment):
                     )
                 else:
                     uw_expr = f"0x{unwind:X}"
+                # Optional prologue annotation: every UNWIND_INFO blob
+                # carries an opcode list (push reg, alloc N, set FP, ...)
+                # — surface it in the row's trailing comment when
+                # parse_unwind_info decoded one.
+                unwind_decoded = pe.unwind_info.get(base_uw)
+                unwind_comment = ""
+                if unwind_decoded is not None and unwind_decoded.codes:
+                    prolog_ops = ", ".join(
+                        f"{op}({info})" for _ofs, op, info in unwind_decoded.codes
+                    )
+                    unwind_comment = (
+                        f" prolog=0x{unwind_decoded.prolog_size:X} [{prolog_ops}]"
+                    )
                 f.write(
                     f"    .long {resolve_func_rva(begin)} - 0x{pe.image_base:X}"
                     f", {resolve_func_rva(end)} - 0x{pe.image_base:X}"
                     f", {uw_expr}"
-                    f"  /* [{entry_index}] RUNTIME_FUNCTION */\n"
+                    f"  /* [{entry_index}] RUNTIME_FUNCTION{unwind_comment} */\n"
                 )
                 i += 12
                 entry_index += 1

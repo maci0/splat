@@ -2241,7 +2241,8 @@ class Win32PublicSurfaceTest(unittest.TestCase):
         expected = {
             # Dataclasses
             "PEInfo", "PESection", "PEExport", "PEImport",
-            "PEBoundImport", "PEResource",
+            "PEBoundImport", "PEResource", "COFFSymbol", "UnwindInfo",
+            "CLRHeader",
             # Top-level entry points
             "parse_pe", "init", "info", "raw_image",
             # Helpers used by segtypes + create_config
@@ -2263,6 +2264,190 @@ class Win32PublicSurfaceTest(unittest.TestCase):
                 hasattr(win32, name),
                 f"public win32 platform surface missing '{name}'",
             )
+
+
+class ParseCLRHeaderTest(unittest.TestCase):
+    def test_dotnet_cor20_header_decoded(self):
+        """A PE with data dir 14 (CLR Runtime Header) populated has
+        an IMAGE_COR20_HEADER record that pe.clr_header decodes:
+        runtime version, metadata RVA/size, entry-point token,
+        strong-name signature pointer."""
+        # COR20 header lives in .rdata; data dir 14 RVA points at it.
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+        cor20 = struct.pack(
+            "<IHHIIIIIIII",
+            72,       # cb (always 72)
+            2, 5,     # runtime major/minor (CLR 2.5)
+            0x2100, 0x400,   # metadata RVA/size
+            0x00000001,      # flags (COMIMAGE_FLAGS_ILONLY)
+            0x06000001,      # entry point token (MethodDef 0x1)
+            0, 0,            # resources RVA/size
+            0x4000, 0x80,    # strong name sig RVA/size
+        )
+        body = bytearray(cor20 + b"\x00" * (FILE_ALIGN - len(cor20)))
+
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": b"\x90" * 0x10},
+                {"name": b".rdata", "vsize": 0x400, "vaddr": rdata_rva,
+                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
+                 "chars": 0x40000040, "body": bytes(body)},
+            ],
+            data_dirs=[(0, 0)] * 14 + [(rdata_rva, 72), (0, 0)],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertIsNotNone(pe.clr_header)
+        self.assertEqual(pe.clr_header.cb_size, 72)
+        self.assertEqual(pe.clr_header.runtime_major, 2)
+        self.assertEqual(pe.clr_header.runtime_minor, 5)
+        self.assertEqual(pe.clr_header.metadata_rva, 0x2100)
+        self.assertEqual(pe.clr_header.metadata_size, 0x400)
+        self.assertEqual(pe.clr_header.flags, 1)
+        self.assertEqual(pe.clr_header.entry_point_token_or_rva, 0x06000001)
+        self.assertEqual(pe.clr_header.strong_name_signature_rva, 0x4000)
+
+
+class ParseVersionTranslationTest(unittest.TestCase):
+    def test_var_file_info_translation_block_surfaced(self):
+        """The VarFileInfo 'Translation' child of a VERSION resource
+        carries an array of (LANGID, codepage) pairs as binary data.
+        Verify _walk_versioninfo_node decodes it into a comma-separated
+        '0xLLLL/0xCCCC' string stored under 'Translation'."""
+        from src.splat.platforms.win32 import _walk_versioninfo_node
+
+        # Build a synthetic VarFileInfo > Translation node with two
+        # locale pairs: en-US (0x0409, 0x04E4) and de-DE (0x0407, 0x04E4).
+        # Node layout:
+        #   wLength + wValueLength(8) + wType(0=binary) + key + value
+        def _wstr(s: str) -> bytes:
+            return (s + "\x00").encode("utf-16-le")
+
+        def _align4(off: int) -> int:
+            return (off + 3) & ~3
+
+        key = _wstr("Translation")
+        value = struct.pack("<HHHH", 0x0409, 0x04E4, 0x0407, 0x04E4)
+        header_size = 6  # wLength + wValueLength + wType
+        body_off = _align4(header_size + len(key))
+        total_size = body_off + len(value)
+        node = (
+            struct.pack("<HHH", total_size, len(value), 0)
+            + key
+            + b"\x00" * (body_off - header_size - len(key))
+            + value
+        )
+
+        out: dict = {}
+        _walk_versioninfo_node(node, 0, out, 0)
+        self.assertIn("Translation", out)
+        self.assertEqual(out["Translation"], "0x0409/0x04E4, 0x0407/0x04E4")
+
+
+class ParseUnwindInfoTest(unittest.TestCase):
+    def test_unwind_codes_decoded_from_runtime_function(self):
+        """A PE32+ binary with one RUNTIME_FUNCTION pointing at an
+        IMAGE_UNWIND_INFO record encoding a simple prologue
+        (`push rbp; sub rsp, 0x20`) must decode the codes."""
+        # Layout: text(0x1000) + pdata(0x2000, single RUNTIME_FUNCTION
+        # pointing at unwind at rdata 0x3000) + rdata(0x3000, unwind info).
+        text_body = b"\x90" * FILE_ALIGN
+        pdata_body = struct.pack("<III", 0x1000, 0x1010, 0x3000)
+        pdata_body = pdata_body.ljust(FILE_ALIGN, b"\x00")
+
+        # UNWIND_INFO:
+        #   version=1, flags=0, prolog_size=5, count=2, frame_reg=0/0
+        #   code[0]: offset=5,  op=ALLOC_SMALL(2) info=3 (3*8+8 = 32 bytes)
+        #   code[1]: offset=1,  op=PUSH_NONVOL(0) info=5 (RBP=reg 5)
+        unwind = struct.pack(
+            "<BBBB" + "BB" * 2,
+            0x01,        # version 1, flags 0
+            5,           # SizeOfProlog
+            2,           # CountOfUnwindCodes
+            0,           # FrameRegister 0
+            5, 0x32,     # code 0: offset 5, op ALLOC_SMALL (2), info 3
+            1, 0x50,     # code 1: offset 1, op PUSH_NONVOL (0), info 5 (RBP)
+        )
+        rdata_body = unwind + b"\x00" * (FILE_ALIGN - len(unwind))
+
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {"name": b".text", "vsize": 0x100, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": text_body},
+                {"name": b".pdata", "vsize": 0x10, "vaddr": 0x2000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
+                 "chars": 0x40000040, "body": pdata_body},
+                {"name": b".rdata", "vsize": len(unwind), "vaddr": 0x3000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 3,
+                 "chars": 0x40000040, "body": rdata_body},
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0),
+                (0x2000, 12),
+            ],
+        )
+
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertIn(0x3000, pe.unwind_info)
+        uw = pe.unwind_info[0x3000]
+        self.assertEqual(uw.version, 1)
+        self.assertEqual(uw.prolog_size, 5)
+        self.assertEqual(len(uw.codes), 2)
+        # First code: ALLOC_SMALL with info 3.
+        self.assertEqual(uw.codes[0][1], "ALLOC_SMALL")
+        self.assertEqual(uw.codes[0][2], 3)
+        # Second code: PUSH_NONVOL with info 5 (RBP).
+        self.assertEqual(uw.codes[1][1], "PUSH_NONVOL")
+        self.assertEqual(uw.codes[1][2], 5)
+
+
+class ParseCoffSymtabTest(unittest.TestCase):
+    def test_vintage_coff_symbols_decoded(self):
+        """A vintage MSVC 4-6 PE shipping an embedded COFF symbol table:
+        each 18-byte IMAGE_SYMBOL record decodes to a COFFSymbol entry
+        on pe.coff_symbols with name / value / section / class."""
+        # Build a tiny PE with PointerToSymbolTable + NumberOfSymbols
+        # populated. Two symbols:
+        #   "main"     value=0x401000, section=1, type=0x20, class=2
+        #   ".text"    value=0,        section=1, type=0x00, class=3
+        sym_a = (
+            b"main\x00\x00\x00\x00"
+            + struct.pack("<IhHBB", 0x00401000, 1, 0x20, 2, 0)
+        )
+        sym_b = (
+            b".text\x00\x00\x00"
+            + struct.pack("<IhHBB", 0, 1, 0x00, 3, 0)
+        )
+        symtab = sym_a + sym_b
+        # Empty string table = just a 4-byte length field of value 4.
+        str_table = struct.pack("<I", 4)
+        # Place symtab at FILE_ALIGN * 2.
+        symtab_off = FILE_ALIGN * 2
+
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678,
+            symtab_off, 2,
+            0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN + symtab + str_table
+
+        pe = win32_platform.parse_pe(bytes(buf))
+        self.assertEqual(len(pe.coff_symbols), 2)
+        self.assertEqual(pe.coff_symbols[0].name, "main")
+        self.assertEqual(pe.coff_symbols[0].value, 0x00401000)
+        self.assertEqual(pe.coff_symbols[0].section_number, 1)
+        self.assertEqual(pe.coff_symbols[0].storage_class, 2)
+        self.assertEqual(pe.coff_symbols[1].name, ".text")
+        self.assertEqual(pe.coff_symbols[1].section_number, 1)
 
 
 class Win32MachineTypeTableTest(unittest.TestCase):

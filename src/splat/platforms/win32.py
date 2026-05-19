@@ -146,6 +146,66 @@ class PEBoundImport:
 
 
 @dataclass
+class CLRHeader:
+    """Decoded IMAGE_COR20_HEADER (data dir 14 — `.NET CLR Runtime
+    Header`). Identifies the binary as a .NET assembly and points at
+    the CLR metadata + entry-point token.
+
+    Splat doesn't decode the metadata tables themselves (would need
+    the full ECMA-335 reader); this just surfaces the header fields
+    so the analyst sees the assembly is .NET-native and can fetch
+    the metadata blob from its RVA."""
+
+    cb_size: int  # always 72
+    runtime_major: int
+    runtime_minor: int
+    metadata_rva: int
+    metadata_size: int
+    flags: int
+    entry_point_token_or_rva: int
+    resources_rva: int
+    resources_size: int
+    strong_name_signature_rva: int
+    strong_name_signature_size: int
+
+
+@dataclass
+class UnwindInfo:
+    """Decoded x64 SEH IMAGE_UNWIND_INFO record (PE32+ only).
+
+    `prolog_size` is the number of bytes the prologue occupies; codes
+    are a flattened list of `(offset_in_prolog, op_name, info_nibble)`
+    triples describing the prolog ops the unwinder will replay. The
+    `chained_function_rva` is set when the chain-info flag is on and
+    a subsequent RUNTIME_FUNCTION's begin/end/unwind triple follows
+    the codes."""
+
+    version: int
+    flags: int
+    prolog_size: int
+    frame_register: int  # 0 = none; otherwise the x86_64 register index
+    frame_register_offset: int  # nibble × 16
+    codes: List[Tuple[int, str, int]] = field(default_factory=list)
+    chained_function_rva: Optional[int] = None
+
+
+@dataclass
+class COFFSymbol:
+    """One IMAGE_SYMBOL record (18 bytes) from the deprecated COFF
+    symbol table that vintage MSVC linkers wrote past the last raw
+    section. Modern toolchains rely on .pdb instead and leave the
+    optional header's PointerToSymbolTable zero, so this list is
+    typically empty on Windows 7+ era binaries."""
+
+    name: str
+    value: int        # VA or RVA depending on storage class
+    section_number: int  # 1-based, 0 = undefined, -1 = absolute, -2 = debug
+    sym_type: int     # combined base + complex type
+    storage_class: int
+    aux_records: int  # number of trailing IMAGE_AUX_SYMBOL entries
+
+
+@dataclass
 class PEResource:
     """One leaf in the .rsrc tree.
 
@@ -224,6 +284,9 @@ class PEInfo:
     # external .pdb instead — but a non-zero value is informative.)
     coff_symtab_ptr: int = 0
     coff_num_symbols: int = 0
+    # Parsed IMAGE_SYMBOL records when coff_symtab_ptr/coff_num_symbols
+    # are non-zero. Empty on modern PEs.
+    coff_symbols: List["COFFSymbol"] = field(default_factory=list)
     # PDB filename embedded in the Debug directory's CodeView record, when
     # present.
     pdb_path: Optional[str] = None
@@ -233,6 +296,11 @@ class PEInfo:
     pdb_age: Optional[int] = None
     # TLS callback VAs gathered from data directory 9.
     tls_callback_vas: List[int] = field(default_factory=list)
+    # Decoded IMAGE_UNWIND_INFO records, keyed by unwind RVA.
+    # PE32+ only; remains empty for PE32 binaries.
+    unwind_info: "Dict[int, UnwindInfo]" = field(default_factory=dict)
+    # Decoded IMAGE_COR20_HEADER when data dir 14 is populated (.NET).
+    clr_header: "Optional[CLRHeader]" = None
     # Resources enumerated from data directory 2 (.rsrc).
     resources: List[PEResource] = field(default_factory=list)
     # Decoded VS_VERSIONINFO key/value pairs (CompanyName, FileVersion,
@@ -512,6 +580,9 @@ def parse_pe(data: bytes) -> PEInfo:
     parse_tls(data, pe)
     parse_resources(data, pe)
     parse_version_info(data, pe)
+    parse_coff_symtab(data, pe)
+    parse_unwind_info(data, pe)
+    parse_clr_header(data, pe)
     return pe
 
 
@@ -1257,6 +1328,25 @@ def _walk_versioninfo_node(blob: bytes, off: int, out: dict, base_off: int) -> i
                 out[key] = value_text
             value_end = body_off + w_value_length * 2
         else:
+            # Binary value. The VarFileInfo's "Translation" child carries
+            # an array of (LANGID, codepage) WORD pairs as binary data —
+            # one entry per locale supported by the version resource.
+            if key == "Translation" and w_value_length >= 4:
+                pairs = []
+                pair_off = body_off
+                while pair_off + 4 <= node_end:
+                    langid, codepage = struct.unpack_from(
+                        "<HH", blob, pair_off
+                    )
+                    pairs.append((langid, codepage))
+                    pair_off += 4
+                    if pair_off - body_off >= w_value_length:
+                        break
+                # Render as a comma-separated list of `0xLLLL/0xCCCC`
+                # so the version_info dict stays str→str.
+                out["Translation"] = ", ".join(
+                    f"0x{lid:04X}/0x{cp:04X}" for lid, cp in pairs
+                )
             value_end = body_off + w_value_length
     value_end = _align4(value_end - base_off) + base_off
 
@@ -1269,6 +1359,201 @@ def _walk_versioninfo_node(blob: bytes, off: int, out: dict, base_off: int) -> i
         child = _align4(next_child - base_off) + base_off
 
     return node_end
+
+
+_UNWIND_OP_NAMES = {
+    0: "PUSH_NONVOL",
+    1: "ALLOC_LARGE",
+    2: "ALLOC_SMALL",
+    3: "SET_FPREG",
+    4: "SAVE_NONVOL",
+    5: "SAVE_NONVOL_FAR",
+    6: "EPILOG",
+    7: "SPARE_CODE",
+    8: "SAVE_XMM128",
+    9: "SAVE_XMM128_FAR",
+    10: "PUSH_MACHFRAME",
+}
+
+
+def parse_clr_header(data: bytes, pe: PEInfo) -> None:
+    """Parse data directory 14 (CLR Runtime Header) when present.
+    Identifies the binary as a .NET assembly and surfaces metadata /
+    entry-point / strong-name fields so the analyst doesn't have to
+    chase down the assembly's structure manually."""
+    if len(pe.data_directories) <= DIR_COM_DESCRIPTOR:
+        return
+    clr_rva, clr_size = pe.data_directories[DIR_COM_DESCRIPTOR]
+    if clr_rva == 0 or clr_size == 0:
+        return
+    f_off = pe.rva_to_file_offset(clr_rva)
+    if f_off is None or f_off + 72 > len(data):
+        return
+    (
+        cb_size,
+        rt_major,
+        rt_minor,
+        md_rva,
+        md_size,
+        flags,
+        entry_tok,
+        res_rva,
+        res_size,
+        sn_rva,
+        sn_size,
+    ) = struct.unpack_from("<IHHIIIIIIII", data, f_off)
+    pe.clr_header = CLRHeader(
+        cb_size=cb_size,
+        runtime_major=rt_major,
+        runtime_minor=rt_minor,
+        metadata_rva=md_rva,
+        metadata_size=md_size,
+        flags=flags,
+        entry_point_token_or_rva=entry_tok,
+        resources_rva=res_rva,
+        resources_size=res_size,
+        strong_name_signature_rva=sn_rva,
+        strong_name_signature_size=sn_size,
+    )
+
+
+def parse_unwind_info(data: bytes, pe: PEInfo) -> None:
+    """Decode each PE32+ RUNTIME_FUNCTION's IMAGE_UNWIND_INFO record.
+
+    The Microsoft x64 SEH spec lays UNWIND_INFO out as:
+        +0  : byte    Version (low 3 bits) | Flags (high 5 bits)
+        +1  : byte    SizeOfProlog
+        +2  : byte    CountOfUnwindCodes
+        +3  : byte    FrameRegister (low 4 bits) | FrameRegOffset*16 (high 4)
+        +4  : code[]  CountOfUnwindCodes × 2 bytes
+        +    : padding to QWORD
+        +    : optional handler / chain-info (per flags)
+
+    Each unwind code is a `(prolog_offset, opcode, info)` triple. We
+    only decode the ops + chained-record pointer; exception-handler
+    data isn't surfaced (rarely useful from a disassembly viewpoint).
+    """
+    if not pe.is_pe32_plus:
+        return
+    seen: Set[int] = set()
+    for begin, _end, raw_uw in pe.runtime_functions:
+        uw = raw_uw & 0x7FFFFFFF
+        if not uw or uw in seen:
+            continue
+        seen.add(uw)
+        f_off = pe.rva_to_file_offset(uw)
+        if f_off is None or f_off + 4 > len(data):
+            continue
+        b0, b1, n_codes, b3 = struct.unpack_from("<BBBB", data, f_off)
+        version = b0 & 0x07
+        flags = b0 >> 3
+        prolog_size = b1
+        frame_register = b3 & 0x0F
+        frame_register_offset = (b3 >> 4) * 16
+
+        codes_off = f_off + 4
+        codes_end = codes_off + n_codes * 2
+        if codes_end > len(data):
+            continue
+        codes: List[Tuple[int, str, int]] = []
+        i = 0
+        while i < n_codes:
+            code_off = codes_off + i * 2
+            offset_in_prolog = data[code_off]
+            packed = data[code_off + 1]
+            op = packed & 0x0F
+            info = packed >> 4
+            codes.append((offset_in_prolog, _UNWIND_OP_NAMES.get(op, f"op{op}"), info))
+            # Ops 1, 4, 5, 8, 9 carry extra slots — skip them so we
+            # don't misread the next code's prolog_offset.
+            extra_slots = {1: 1 + (1 if info else 0), 4: 1, 5: 2, 8: 1, 9: 2}.get(op, 0)
+            i += 1 + extra_slots
+
+        chained_rva: Optional[int] = None
+        if flags & 0x04:  # UNW_FLAG_CHAININFO
+            chain_off = _align4(codes_end - 0) + 0
+            chain_off = (codes_end + 3) & ~3
+            if chain_off + 12 <= len(data):
+                chained_rva = struct.unpack_from("<I", data, chain_off)[0]
+
+        pe.unwind_info[uw] = UnwindInfo(
+            version=version,
+            flags=flags,
+            prolog_size=prolog_size,
+            frame_register=frame_register,
+            frame_register_offset=frame_register_offset,
+            codes=codes,
+            chained_function_rva=chained_rva,
+        )
+
+
+def parse_coff_symtab(data: bytes, pe: PEInfo) -> None:
+    """Parse the deprecated COFF symbol table when the optional header
+    points at one. Modern MSVC binaries leave PointerToSymbolTable
+    zero and ship debug info via PDB; this parser exists so vintage
+    MSVC 4-6 binaries (and some object-file-style PEs) get their
+    embedded symbol records surfaced as `pe.coff_symbols`.
+
+    Each IMAGE_SYMBOL record is 18 bytes:
+      0   :  8 bytes  Name (zero-terminated; if first 4 bytes are 0
+                              the next 4 bytes are a string-table offset)
+      8   :  4 bytes  Value
+      12  :  2 bytes  SectionNumber (signed: 0/-1/-2 are special)
+      14  :  2 bytes  Type
+      16  :  1 byte   StorageClass
+      17  :  1 byte   NumberOfAuxSymbols
+
+    The string table immediately follows the symbol records; its
+    leading DWORD is its total length.
+    """
+    if not pe.coff_symtab_ptr or not pe.coff_num_symbols:
+        return
+    base = pe.coff_symtab_ptr
+    n_syms = pe.coff_num_symbols
+    end = base + n_syms * 18
+    if end > len(data):
+        return
+    str_table_off = end
+    str_table_size = 0
+    if str_table_off + 4 <= len(data):
+        str_table_size = struct.unpack_from("<I", data, str_table_off)[0]
+
+    def _read_name(record_off: int) -> str:
+        name_bytes = data[record_off : record_off + 8]
+        # If the first 4 bytes are zero, the next 4 are the string-
+        # table offset (relative to the string table base).
+        if name_bytes[:4] == b"\x00\x00\x00\x00":
+            str_off = struct.unpack_from("<I", name_bytes, 4)[0]
+            abs_off = str_table_off + str_off
+            if abs_off >= len(data):
+                return ""
+            return _read_cstr(data, abs_off)
+        return name_bytes.split(b"\x00", 1)[0].decode("ascii", errors="replace")
+
+    # Cap iteration the same way other parsers do.
+    i = 0
+    while i < min(n_syms, 1_000_000):
+        rec = base + i * 18
+        if rec + 18 > len(data):
+            break
+        name = _read_name(rec)
+        value, section_number, sym_type, storage_class, aux = struct.unpack_from(
+            "<IhHBB", data, rec + 8
+        )
+        pe.coff_symbols.append(
+            COFFSymbol(
+                name=name,
+                value=value,
+                section_number=section_number,
+                sym_type=sym_type,
+                storage_class=storage_class,
+                aux_records=aux,
+            )
+        )
+        # Skip the aux records — splat doesn't currently surface them
+        # but their slot count needs to advance the iterator so the
+        # next named symbol lines up.
+        i += 1 + aux
 
 
 def parse_version_info(data: bytes, pe: PEInfo) -> None:
