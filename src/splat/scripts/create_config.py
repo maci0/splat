@@ -493,11 +493,15 @@ options:
 """
 
     for s in bss_sections:
+        # Sections claiming "uninitialized data" with VirtualSize 0 carry
+        # no runtime footprint — skip rather than emit `bss_size: 0x0`
+        # which splat treats as a malformed segment.
+        if s.virtual_size == 0:
+            continue
         safe_name = _unique_name(s.name or "bss")
         vram = pe.image_base + s.virtual_address
-        size = max(s.virtual_size, 0)
         segments += f"""\
-  - {{ name: {safe_name}, type: bss, vram: 0x{vram:08X}, bss_size: 0x{size:X} }}
+  - {{ name: {safe_name}, type: bss, vram: 0x{vram:08X}, bss_size: 0x{s.virtual_size:X} }}
 
 """
 

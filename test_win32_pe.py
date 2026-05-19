@@ -2130,6 +2130,49 @@ class CreateConfigExportLabelDedupTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class CreateConfigZeroSizeBssTest(unittest.TestCase):
+    def test_zero_virtual_size_bss_section_is_skipped(self):
+        """A section flagged as UNINITIALIZED_DATA with VirtualSize = 0
+        has no runtime footprint. Emitting `bss_size: 0x0` would create
+        a malformed splat segment — skip such sections in YAML
+        generation."""
+        # Build PE with .text + a degenerate empty .bss-flagged section.
+        text_body = b"\x90" * FILE_ALIGN
+        pe_bytes = _build_pe(
+            sections=[
+                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
+                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
+                 "chars": 0x60000020, "body": text_body},
+                # raw_size=0, virtual_size=0, characteristics has
+                # SCN_CNT_UNINITIALIZED_DATA (0x00000080).
+                {"name": b".bss", "vsize": 0, "vaddr": 0x2000,
+                 "rsize": 0, "rptr": 0,
+                 "chars": 0xC0000080, "body": b""},
+            ],
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-emptybss-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "emptybss.exe"
+            exe.write_bytes(pe_bytes)
+            create_win32_config(exe, pe_bytes)
+            yaml_txt = (tmpdir / "emptybss.exe.yaml").read_text()
+            self.assertNotIn("bss_size: 0x0", yaml_txt)
+            # Empty .bss section should not produce a segment line at all.
+            self.assertNotIn("name: bss,", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigSectionNameDedupTest(unittest.TestCase):
     def test_duplicate_section_names_disambiguated_in_yaml(self):
         """PE format doesn't require unique section names. A packed or
