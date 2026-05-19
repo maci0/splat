@@ -2629,6 +2629,63 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(labels, {})
 
 
+class CreateConfigPhantomSectionTest(unittest.TestCase):
+    def test_section_with_zero_raw_pointer_treated_as_bss(self):
+        """A section whose SizeOfRawData > 0 but PointerToRawData == 0
+        is loader-classified as uninitialised data — the file simply
+        doesn't back its bytes. Auto-config must not emit a file-backed
+        segment pointing at offset 0 (which is the DOS header) for it."""
+        text_body = b"\x90" * FILE_ALIGN
+        # Build PE with .text + a "phantom" section claiming raw_size
+        # but raw_pointer = 0.
+        sec_text = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        # Hand-craft .bss: raw_size=0x40, raw_pointer=0, virtual_size=0x80.
+        sec_bss = struct.pack(
+            "<8sIIIIIIHHI",
+            b".bss\x00\x00\x00\x00",
+            0x80,    # VirtualSize
+            0x2000,  # VirtualAddress
+            0x40,    # SizeOfRawData (nonzero!)
+            0,       # PointerToRawData (zero — phantom)
+            0, 0, 0, 0,
+            0xC0000040,  # READ | WRITE | INITIALIZED_DATA (no UNINIT flag)
+        )
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        header = (
+            DOS_STUB + b"PE\x00\x00" + coff + opt + sec_text + sec_bss
+        )
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + text_body
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-phantom-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "phantom.exe"
+            exe.write_bytes(bytes(buf))
+            create_win32_config(exe, bytes(buf))
+            yaml_txt = (tmpdir / "phantom.exe.yaml").read_text()
+            # The phantom .bss should NOT be emitted as a file-backed
+            # type:code subsegment (which would point at offset 0).
+            self.assertNotIn("[0x0, ", yaml_txt)
+            # It SHOULD appear as a bss segment.
+            self.assertIn("name: bss,", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigResourceOnlyDllTest(unittest.TestCase):
     def test_pure_resource_dll_produces_loadable_yaml(self):
         """A resource-only DLL has no entrypoint, no exports, no imports

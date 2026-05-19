@@ -447,9 +447,16 @@ options:
   data_string_encoding: ASCII
 """
 
-    # First raw byte of the first non-NOLOAD section delimits the header.
+    # A section with raw_size > 0 but raw_pointer == 0 is loader-treated
+    # as uninitialised at runtime (the file simply doesn't back any bytes
+    # for it). Group those with the BSS bucket so we don't generate a
+    # file-backed segment pointing at offset 0 (the DOS header).
+    def _is_file_backed(s) -> bool:
+        return s.raw_size > 0 and s.raw_pointer > 0
+
+    # First raw byte of the first file-backed section delimits the header.
     first_raw = min(
-        (s.raw_pointer for s in pe.sections if s.raw_size > 0),
+        (s.raw_pointer for s in pe.sections if _is_file_backed(s)),
         default=pe.size_of_headers,
     )
 
@@ -464,14 +471,15 @@ options:
     # Order sections by file position so segments stay monotonically
     # increasing in rom_start (splat requires this).
     file_sections = sorted(
-        (s for s in pe.sections if s.raw_size > 0),
+        (s for s in pe.sections if _is_file_backed(s)),
         key=lambda s: s.raw_pointer,
     )
     bss_sections = [
         s
         for s in pe.sections
-        if s.raw_size == 0
-        and (s.characteristics & SCN_CNT_UNINITIALIZED_DATA)
+        if not _is_file_backed(s)
+        and (s.characteristics & SCN_CNT_UNINITIALIZED_DATA
+             or s.virtual_size > 0)
     ]
 
     # Disambiguate duplicate section names (PE spec doesn't require
