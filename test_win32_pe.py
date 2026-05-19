@@ -765,6 +765,57 @@ class PELoadConfigTest(unittest.TestCase):
 
 
 class PECfgTest(unittest.TestCase):
+    def test_pe32_plus_guardcf_table(self):
+        """PE32+ Load Config places GuardCFFunctionTable at +0x80, count
+        at +0x88, flags at +0x90. Verify the 64-bit layout (PE32 fields
+        are at +0x54/+0x58/+0x5C in the other test)."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+
+        cfg_table_off = rdata_rva + 0xA0
+        cfg_table_va = 0x140000000 + cfg_table_off
+        body = bytearray(0x200)
+        # SecurityCookie at +0x58 (QWORD)
+        struct.pack_into("<Q", body, 0x58, 0x140100000)
+        # GuardCF fields
+        struct.pack_into("<Q", body, 0x80, cfg_table_va)
+        struct.pack_into("<Q", body, 0x88, 2)
+        struct.pack_into("<I", body, 0x90, 0)
+        # Two CFG RVAs
+        struct.pack_into("<II", body, 0xA0, 0x1100, 0x1200)
+
+        pe_bytes = _build_pe_plus(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x100,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x100,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x200,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0), (0, 0), (0, 0), (0, 0),
+                (rdata_rva, 0x98),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertTrue(pe.is_pe32_plus)
+        self.assertEqual(pe.security_cookie_va, 0x140100000)
+        self.assertEqual(pe.cfg_function_rvas, [0x1100, 0x1200])
+
     def test_pe32_guardcf_table(self):
         rdata_rva = 0x2000
         rdata_rptr = FILE_ALIGN * 2
