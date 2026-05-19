@@ -1518,6 +1518,53 @@ class PEOrdinalImportTest(unittest.TestCase):
 
 
 class PERelocsTest(unittest.TestCase):
+    def test_non_pointer_reloc_types_skipped(self):
+        """Reloc types other than HIGHLOW (3) and DIR64 (10) — LOW (1),
+        HIGH (2), HIGHADJ (4), and ABSOLUTE (0) padding — must NOT
+        populate pe.pointer_rvas. They describe partial relocations or
+        padding, not full pointers."""
+        reloc_rva = 0x4000
+        reloc_rptr = FILE_ALIGN * 3
+        block = struct.pack("<II", 0x6000, 20) + struct.pack(
+            "<HHHHHH",
+            (1 << 12) | 0x010,    # LOW — skip
+            (2 << 12) | 0x020,    # HIGH — skip
+            (4 << 12) | 0x030,    # HIGHADJ — skip
+            (0 << 12) | 0x040,    # ABSOLUTE padding — skip
+            (3 << 12) | 0x050,    # HIGHLOW — accept
+            0,                     # padding
+        )
+
+        pe_bytes = _build_pe(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".reloc",
+                    "vsize": len(block),
+                    "vaddr": reloc_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": reloc_rptr,
+                    "chars": 0x42000040,
+                    "body": block,
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (reloc_rva, len(block)),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        # Only the HIGHLOW entry should land in pointer_rvas.
+        self.assertEqual(pe.pointer_rvas, {0x6050})
+
     def test_dir64_relocs(self):
         """PE32+ binaries emit IMAGE_REL_BASED_DIR64 (type 10) entries.
         Verify the parser accepts both HIGHLOW (type 3) and DIR64 (type 10)
