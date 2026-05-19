@@ -1947,6 +1947,46 @@ class PERelocsTest(unittest.TestCase):
         self.assertEqual(pe.pointer_rvas, {0x3010, 0x3020})
 
 
+class NarrowStringDetectionTest(unittest.TestCase):
+    """Narrow ANSI string scanner: NUL-terminated runs of printable bytes."""
+
+    def test_basic_ascii_run(self):
+        from src.splat.segtypes.win32.data import _scan_string
+
+        blob = b"hello\x00"
+        end = _scan_string(blob, 0)
+        self.assertEqual(end, 6)
+
+    def test_run_below_minimum_rejected(self):
+        from src.splat.segtypes.win32.data import _scan_string
+
+        # 3 chars + NUL < STRING_MIN_LEN (4).
+        self.assertIsNone(_scan_string(b"hi\x00\x00", 0))
+
+    def test_missing_terminator_rejected(self):
+        from src.splat.segtypes.win32.data import _scan_string
+
+        # Printable run with no NUL terminator before EOF.
+        self.assertIsNone(_scan_string(b"hello", 0))
+
+    def test_latin1_supplement_accepted(self):
+        from src.splat.segtypes.win32.data import _scan_string
+
+        # 'Müller' in Latin-1: M ü l l e r \0 — middle byte 0xFC is in
+        # the Latin-1 Supplement printable range (0xA0-0xFF). The
+        # scanner accepts it (symmetric with the wide-string scanner).
+        blob = b"M\xFCller\x00"
+        end = _scan_string(blob, 0)
+        self.assertEqual(end, 7)
+
+    def test_non_printable_byte_terminates(self):
+        from src.splat.segtypes.win32.data import _scan_string
+
+        # 0x01 (SOH) isn't in our printable set — scanner short-circuits
+        # without finding a NUL terminator.
+        self.assertIsNone(_scan_string(b"ab\x01cd\x00", 0))
+
+
 class WideStringDetectionTest(unittest.TestCase):
     """Wide-string scanner returns the byte range past the WCHAR NUL."""
 
