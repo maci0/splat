@@ -1808,6 +1808,25 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.parse_pe(b"MZ" + b"\x00" * 10)
 
+    def test_machine_magic_mismatch(self):
+        """A PE file with i386 Machine but PE32+ optional header magic
+        (or vice-versa) must be rejected — both fields encode pointer
+        size and they must agree."""
+        # i386 Machine + PE32+ magic.
+        coff_off = 0x40 + 4
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 1, 0x12345678, 0, 0, 0xF0, 0x010F,
+        )
+        # PE32+ optional header (240 bytes) but Machine claims i386.
+        opt = _opt_header_pe32_plus(entry_rva=0x1000)
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec
+        with self.assertRaises(SystemExit):
+            win32_platform.parse_pe(bytes(header).ljust(FILE_ALIGN * 2, b"\x00"))
+
     def test_missing_pe_signature(self):
         """An MZ header pointing at non-PE bytes must be rejected."""
         # Valid DOS header pointing e_lfanew at 0x40, but the bytes there
