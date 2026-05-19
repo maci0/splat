@@ -88,6 +88,10 @@ class Win32SegPdata(CommonSegment):
                         )
                     i = n
                     break
+                # Unwind RVA emitted as a raw 32-bit value: the high
+                # bit set means "chained record" (UNWIND_INFO is itself
+                # a UNWIND_HISTORY pointing at the next handler in the
+                # chain) — round-trips byte-for-byte either way.
                 f.write(
                     f"    .long {resolve_func_rva(begin)} - 0x{pe.image_base:X}"
                     f", {resolve_func_rva(end)} - 0x{pe.image_base:X}"
