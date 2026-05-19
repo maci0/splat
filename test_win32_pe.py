@@ -2163,6 +2163,39 @@ class CreateConfigAllForwardersTest(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class RvaToFileOffsetVirtualTailTest(unittest.TestCase):
+    def test_rva_in_virtual_only_tail_returns_none(self):
+        """A section with VirtualSize > SizeOfRawData has a virtual-only
+        tail that the loader zero-fills. RVAs in that range have no
+        backing bytes — `rva_to_file_offset` must return None instead
+        of mapping into the next section's raw bytes."""
+        # Two sections. .text: raw 0x200, virt 0x400 (0x200 tail).
+        # .rdata: raw 0x200, virt 0x10.
+        text_body = b"\x90" * FILE_ALIGN
+        rdata_body = b"\x11" * 0x10
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        opt = _opt_header_pe32(entry_rva=0x1000)
+        # .text: virtual_size 0x400, raw_size FILE_ALIGN (0x200), raw_ptr 0x200.
+        sec_text = _section_header(
+            b".text", 0x400, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        sec_rdata = _section_header(
+            b".rdata", 0x10, 0x2000, FILE_ALIGN, FILE_ALIGN * 2, 0x40000040
+        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec_text + sec_rdata
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + text_body + rdata_body.ljust(FILE_ALIGN, b"\x00")
+
+        pe = win32_platform.parse_pe(bytes(buf))
+        # RVA 0x1100 — past .text raw_size (0x200) but within
+        # virtual_size (0x400). Should return None.
+        self.assertIsNone(pe.rva_to_file_offset(0x1100 + 0x100))
+        # RVA 0x1100 itself — still inside raw bytes (0x100 < 0x200) — valid.
+        self.assertEqual(pe.rva_to_file_offset(0x1100), FILE_ALIGN + 0x100)
+
+
 class Win32MachineTypeTableTest(unittest.TestCase):
     def test_machine_types_cover_arch_id_landscape(self):
         from src.splat.segtypes.win32.header import _MACHINE_TYPES

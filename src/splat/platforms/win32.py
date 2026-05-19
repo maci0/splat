@@ -190,10 +190,19 @@ class PEInfo:
 
     def rva_to_file_offset(self, rva: int) -> Optional[int]:
         for s in self.sections:
-            if s.virtual_address <= rva < s.virtual_address + max(
-                s.virtual_size, s.raw_size
-            ):
-                return s.raw_pointer + (rva - s.virtual_address)
+            sec_end = s.virtual_address + max(s.virtual_size, s.raw_size)
+            if not (s.virtual_address <= rva < sec_end):
+                continue
+            # In a section whose VirtualSize > SizeOfRawData (MSVC zero-init
+            # tail or read-only constants past the file boundary), RVAs
+            # within the trailing virtual-only range have NO backing
+            # bytes — the loader zero-fills them at map time. Returning
+            # raw_pointer + offset for those RVAs would land in the
+            # next section's raw bytes. Reject instead.
+            offset_in_section = rva - s.virtual_address
+            if offset_in_section >= s.raw_size:
+                return None
+            return s.raw_pointer + offset_in_section
         return None
 
     def va_to_file_offset(self, va: int) -> Optional[int]:
