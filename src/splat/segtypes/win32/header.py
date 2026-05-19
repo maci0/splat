@@ -262,10 +262,11 @@ class Win32SegHeader(CommonSegHeader):
         out.append(" * PE / COFF summary (decoded from the bytes below)")
         out.append(f" *   Machine:           0x{pe.machine:04X}"
                    + (" (i386)" if pe.machine == 0x014C else " (amd64)" if pe.machine == 0x8664 else ""))
-        out.append(f" *   ImageBase:         0x{pe.image_base:08X}")
+        base_width = 16 if pe.is_pe32_plus else 8
+        out.append(f" *   ImageBase:         0x{pe.image_base:0{base_width}X}")
         if pe.entry_point_rva:
             out.append(
-                f" *   EntryPoint:        0x{pe.entry_point_va:08X}"
+                f" *   EntryPoint:        0x{pe.entry_point_va:0{base_width}X}"
                 f"  (RVA 0x{pe.entry_point_rva:X})"
             )
         else:
@@ -318,7 +319,9 @@ class Win32SegHeader(CommonSegHeader):
             age = pe.pdb_age if pe.pdb_age is not None else 0
             out.append(f" *   PDB GUID/Age:      {pe.pdb_guid}-{age}")
         if pe.tls_callback_vas:
-            cb_list = ", ".join(f"0x{v:08X}" for v in pe.tls_callback_vas)
+            cb_list = ", ".join(
+                f"0x{v:0{base_width}X}" for v in pe.tls_callback_vas
+            )
             out.append(f" *   TLS callbacks:     {cb_list}")
         out.append(" *")
         out.append(" *   Sections:")
@@ -333,7 +336,7 @@ class Win32SegHeader(CommonSegHeader):
             if s.is_bss:
                 flags.append("BSS")
             out.append(
-                f" *     {s.name:<10s} VA=0x{(pe.image_base + s.virtual_address):08X}"
+                f" *     {s.name:<10s} VA=0x{(pe.image_base + s.virtual_address):0{base_width}X}"
                 f"  VSize=0x{s.virtual_size:X}"
                 f"  Raw=0x{s.raw_pointer:X}+0x{s.raw_size:X}"
                 f"  [{','.join(flags)}]"
@@ -350,7 +353,7 @@ class Win32SegHeader(CommonSegHeader):
                     )
                 else:
                     out.append(
-                        f" *     [{exp.ordinal:>4}] 0x{va:08X} {exp.name or '<unnamed>'}"
+                        f" *     [{exp.ordinal:>4}] 0x{va:0{base_width}X} {exp.name or '<unnamed>'}"
                     )
         if pe.imports:
             by_dll: dict = {}

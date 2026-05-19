@@ -2551,6 +2551,59 @@ class Win32SegtypeAliasTest(unittest.TestCase):
         self.assertEqual(Win32SegAsm.__bases__, (Win32SegText,))
 
 
+class Win32HeaderWidthTest(unittest.TestCase):
+    def test_pe32_plus_imagebase_padded_to_16_hex(self):
+        """For PE32+ the ImageBase is 64-bit (e.g. 0x140000000 — 9 hex
+        digits). The header summary should pad to 16 hex digits so VAs
+        line up consistently with EntryPoint and section VA columns."""
+        from src.splat.segtypes.win32.header import Win32SegHeader
+        from src.splat.platforms import win32 as win32_platform
+
+        old_info = win32_platform.info
+        try:
+            pe = win32_platform.PEInfo(
+                is_pe32_plus=True,
+                image_base=0x140000000,
+                entry_point_rva=0x1000,
+                machine=0x8664,
+                subsystem=3,
+            )
+            win32_platform.info = pe
+            seg = object.__new__(Win32SegHeader)
+            lines = seg._summary_block(pe)
+            block = "\n".join(lines)
+            self.assertIn("0x0000000140000000", block)
+            self.assertIn("0x0000000140001000", block)
+        finally:
+            win32_platform.info = old_info
+
+    def test_pe32_imagebase_padded_to_8_hex(self):
+        """PE32 keeps the legacy 8-digit width since ImageBase fits in 32
+        bits — verifies we didn't regress the common case while adding
+        PE32+ support."""
+        from src.splat.segtypes.win32.header import Win32SegHeader
+        from src.splat.platforms import win32 as win32_platform
+
+        old_info = win32_platform.info
+        try:
+            pe = win32_platform.PEInfo(
+                is_pe32_plus=False,
+                image_base=0x00400000,
+                entry_point_rva=0x1000,
+                machine=0x014C,
+                subsystem=3,
+            )
+            win32_platform.info = pe
+            seg = object.__new__(Win32SegHeader)
+            lines = seg._summary_block(pe)
+            block = "\n".join(lines)
+            self.assertIn("0x00400000", block)
+            self.assertIn("0x00401000", block)
+            self.assertNotIn("0x0000000000400000", block)
+        finally:
+            win32_platform.info = old_info
+
+
 class CapstoneDisassemblerTest(unittest.TestCase):
     def test_known_types_includes_primitive_set(self):
         """CapstoneDisassembler.known_types returns the spimdisasm-mirror
