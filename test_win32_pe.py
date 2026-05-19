@@ -919,6 +919,57 @@ class PELoadConfigTest(unittest.TestCase):
 
 
 class PECfgTest(unittest.TestCase):
+    def test_pe32_cfg_table_with_extra_metadata_bytes(self):
+        """The top nibble of GuardFlags encodes how many extra metadata
+        bytes follow each CFG RVA in the table. Verify the parser
+        strides by `4 + extra` so entries don't shift."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+
+        cfg_table_off = rdata_rva + 0x80
+        cfg_table_va = IMAGE_BASE + cfg_table_off
+        body = bytearray(0x200)
+        struct.pack_into("<I", body, 0x54, cfg_table_va)
+        struct.pack_into("<I", body, 0x58, 3)
+        # GuardFlags top nibble = 2 → +2 bytes per entry → stride 6.
+        struct.pack_into("<I", body, 0x5C, 0x20000000)
+        # Three entries at stride 6: RVA + 2 bytes of metadata.
+        for i, rva in enumerate([0x1000, 0x1100, 0x1200]):
+            off = 0x80 + i * 6
+            struct.pack_into("<I", body, off, rva)
+            struct.pack_into("<H", body, off + 4, 0xBEEF)  # metadata
+
+        pe_bytes = _build_pe(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x100,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x100,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x200,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0), (0, 0), (0, 0), (0, 0),
+                (rdata_rva, 0x60),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(pe.cfg_function_rvas, [0x1000, 0x1100, 0x1200])
+        self.assertEqual(pe.cfg_flags, 0x20000000)
+
     def test_pe32_plus_guardcf_table(self):
         """PE32+ Load Config places GuardCFFunctionTable at +0x80, count
         at +0x88, flags at +0x90. Verify the 64-bit layout (PE32 fields
