@@ -142,7 +142,16 @@ class Testing(unittest.TestCase):
         self.assertTrue(yaml_files, "autogen produced no YAML")
         sym_addrs = tmp_dir / "symbol_addrs.txt"
         self.assertTrue(sym_addrs.exists(), "autogen produced no symbol_addrs.txt")
-        self.assertIn("entrypoint", sym_addrs.read_text(encoding="utf-8"))
+        sym_text = sym_addrs.read_text(encoding="utf-8")
+        self.assertIn("entrypoint", sym_text)
+        # Provenance preamble: source filename + truncated sha1.
+        import hashlib
+        expected_sha1 = hashlib.sha1(exe_bytes).hexdigest()[:12]
+        self.assertIn(exe_path.name, sym_text)
+        self.assertIn(expected_sha1, sym_text)
+        # YAML sha1 should match the binary's full sha1.
+        yaml_text = yaml_files[0].read_text(encoding="utf-8")
+        self.assertIn(hashlib.sha1(exe_bytes).hexdigest(), yaml_text)
 
         shutil.rmtree(tmp_dir)
 
