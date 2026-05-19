@@ -21,6 +21,8 @@ PE_MAGIC = b"PE\x00\x00"
 
 MACHINE_I386 = 0x014C
 MACHINE_AMD64 = 0x8664
+MACHINE_ARM32 = 0x01C4  # ARMv7 Thumb-2 (Windows on ARM 32-bit)
+MACHINE_ARM64 = 0xAA64  # AArch64 (Windows on ARM 64-bit)
 
 # Section header flags (IMAGE_SCN_*)
 SCN_CNT_CODE = 0x00000020
@@ -337,8 +339,8 @@ def parse_pe(data: bytes) -> PEInfo:
     # Cross-validate Machine vs Optional Header magic: i386 / ARM32 are
     # always PE32 (magic 0x10B); AMD64 / ARM64 are always PE32+ (magic
     # 0x20B). A mismatch indicates a corrupt or fabricated PE.
-    _M32 = {MACHINE_I386, 0x01C4}
-    _M64 = {MACHINE_AMD64, 0xAA64}
+    _M32 = {MACHINE_I386, MACHINE_ARM32}
+    _M64 = {MACHINE_AMD64, MACHINE_ARM64}
     if machine in _M64 and not is_pe32_plus:
         log.error(
             f"win32 target's Machine (0x{machine:04X}) is 64-bit but the "
@@ -1228,10 +1230,6 @@ def parse_version_info(data: bytes, pe: PEInfo) -> None:
         except Exception:
             # Malformed VERSIONINFO; leave whatever we already extracted.
             continue
-
-
-MACHINE_ARM64 = 0xAA64
-MACHINE_ARM32 = 0x01C4  # ARMv7 Thumb-2
 
 
 def init(target_bytes: bytes):
