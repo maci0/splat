@@ -14,7 +14,7 @@ options:
   undefined_funcs_auto_path: undefined_funcs_auto.txt
   undefined_syms_auto_path: undefined_syms_auto.txt
   asset_path: assets
-  section_order: [".text", ".data", ".rodata", ".bss"]
+  section_order: [".header", ".text", ".rdata", ".data", ".pdata", ".rodata", ".bss"]
 
 segments:
   - name: header

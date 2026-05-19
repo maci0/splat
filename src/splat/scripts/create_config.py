@@ -461,7 +461,7 @@ options:
 
   o_as_suffix: True
 
-  section_order: [".text", ".rdata", ".data", ".pdata", ".rodata", ".bss"]
+  section_order: [".header", ".text", ".rdata", ".data", ".pdata", ".rodata", ".bss"]
 
   symbol_addrs_path:
     - symbol_addrs.txt

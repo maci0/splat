@@ -114,6 +114,11 @@ def _decode_flags(value: int, table) -> str:
 class Win32SegHeader(CommonSegHeader):
     """The PE header segment.
 
+    Overrides `get_linker_section` to `.header` so the splat-generated
+    linker script pulls bytes from the right input section name —
+    header.s emits `.section .header` (matching the PE convention)
+    rather than the default `.data` that the base class would assume.
+
     Emits a structured `.s` file covering DOS stub, PE signature,
     COFF file header, optional header (PE32 or PE32+ specific
     layout), every populated data directory, and the section table.
@@ -124,6 +129,12 @@ class Win32SegHeader(CommonSegHeader):
     emission, decoding Machine / ImageBase / EntryPoint /
     Subsystem / characteristics flags / sections / exports /
     imports / PDB / TLS / resources by name."""
+
+    def get_linker_section(self) -> str:
+        # Override the default `.data` so the linker script's
+        # `<file>.o(.header)` reference matches the section name that
+        # parse_header() emits via `.section .header`.
+        return ".header"
 
     @staticmethod
     def _le(data: bytes) -> bytes:

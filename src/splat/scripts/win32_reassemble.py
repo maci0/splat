@@ -1,21 +1,18 @@
 """Reassemble a splat-split win32 PE back into a single PE/EXE/DLL.
 
-Pipeline (no ld needed — GAS + objcopy is enough since each split .s
-file is positioned at the right file-offset by the YAML's segment
-ordering):
+Pipeline:
 
-  1. Parse the YAML to discover segment order + rom_start offsets.
-  2. For each .s segment: `as` to ELF, `objcopy -O binary -j <linker_section>`
-     to extract the raw bytes that the section would occupy in the PE.
-  3. For each `.bin` asset: read the raw bytes directly.
-  4. Concatenate in rom_start order, padding to each segment's declared
-     start offset.
-  5. Write the resulting blob — it IS the reassembled PE.
+  1. Run `as` on every .s under asm_path / data_path → .o files placed
+     at the build_path layout the splat-generated linker script
+     expects (build/asm/<rel>.s.o).
+  2. Wrap any .bin assets into ELF objects via `objcopy -I binary -O
+     elf32-i386|elf64-x86-64` so they can be linked in.
+  3. Invoke `ld -T <splat.ld>` from the base_path to produce an ELF
+     image whose section layout matches the original PE.
+  4. Run `objcopy -O pei-i386|pei-x86-64` to convert the ELF to a PE.
 
-Each `.s` produced by splat uses `.section <name>, "<flags>"` so `as`
-emits the bytes verbatim into that named section. The PE header
-segment (header.s) carries the full DOS+COFF+optional-header layout,
-and every other segment is the matching section payload.
+Output defaults to `<target>.reasm` next to the original target
+binary so an accidental run doesn't clobber the source.
 """
 
 from __future__ import annotations
@@ -27,7 +24,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 import yaml
 
@@ -39,7 +36,7 @@ def _which(cmd: str) -> str:
     if not found:
         log.error(
             f"win32_reassemble: required tool '{cmd}' not on PATH — "
-            "install binutils (provides as / objcopy)"
+            "install binutils (provides as / ld / objcopy)"
         )
     return found
 
@@ -67,122 +64,6 @@ def _detect_bitness(yaml_path: Path, conf: dict) -> bool:
     return magic == 0x20B
 
 
-# Map a segment's `type:` token to (linker_section, expected_filename_suffix).
-# The linker section is what `objcopy -O binary -j` will extract from the
-# `as` output.
-_SECTION_FOR_TYPE: Dict[str, str] = {
-    "header": ".header",
-    "text": ".text",
-    "code": ".text",  # parent type — payload is in child subsegments
-    "data": ".data",
-    "rodata": ".rodata",
-    "pdata": ".pdata",
-    "bss": "__BSS__",  # zero-filled, no .s file
-    "bin": "__BIN__",  # raw binary, no .s file
-    "asm": ".text",
-}
-
-
-def _walk_segments(conf: dict) -> List[dict]:
-    """Flatten the YAML's segment list to a list of leaf segments
-    each carrying (name, start, type, linker_section)."""
-    out: List[dict] = []
-    for seg in conf.get("segments", []):
-        if isinstance(seg, list):
-            # Position marker — no segment.
-            continue
-        if not isinstance(seg, dict):
-            continue
-        s_type = seg.get("type")
-        # Code parent → expand to its subsegments.
-        if s_type == "code" and "subsegments" in seg:
-            for sub in seg["subsegments"]:
-                if isinstance(sub, list) and len(sub) >= 3:
-                    sub_start, sub_type, sub_name = sub[0], sub[1], sub[2]
-                    out.append({
-                        "name": sub_name,
-                        "start": sub_start,
-                        "type": sub_type,
-                    })
-                elif isinstance(sub, dict):
-                    # Inline-dict subsegment form: { start: ..., type: ..., name: ... }
-                    out.append({
-                        "name": sub.get("name", ""),
-                        "start": sub.get("start"),
-                        "type": sub.get("type"),
-                    })
-            continue
-        out.append({
-            "name": seg.get("name", ""),
-            "start": seg.get("start"),
-            "type": s_type,
-            "vram": seg.get("vram"),
-            "bss_size": seg.get("bss_size", 0),
-        })
-    return out
-
-
-def _segment_source(
-    base_path: Path,
-    asm_path: Path,
-    data_path: Path,
-    asset_path: Path,
-    seg: dict,
-) -> Optional[Path]:
-    """Find the .s or .bin file for a flattened segment, by name."""
-    s_type = seg["type"]
-    name = seg["name"]
-    if s_type == "bss":
-        return None
-    if s_type == "bin":
-        # Splat writes `.bin` under asset_path with the segment name.
-        candidate = asset_path / f"{name}.bin"
-        if candidate.exists():
-            return candidate
-        for p in asset_path.rglob(f"{name}.bin"):
-            return p
-        return None
-    # .s files live under asm_path (text/code) or data_path (data/rodata/pdata).
-    roots = [asm_path, data_path]
-    for root in roots:
-        if not root.exists():
-            continue
-        for p in root.rglob(f"{name}.s"):
-            return p
-    return None
-
-
-def _extract_section_bytes(
-    asm: str,
-    objcopy: str,
-    s_path: Path,
-    section: str,
-    mode_flag: str,
-    tmpdir: Path,
-    verbose: bool,
-) -> bytes:
-    """Assemble `s_path` and dump the named section's raw bytes."""
-    o_path = tmpdir / (s_path.stem + ".o")
-    bin_path = tmpdir / (s_path.stem + ".bin")
-    _run([asm, mode_flag, str(s_path), "-o", str(o_path)], verbose)
-    # Force alloc+load on the target section so `-O binary` doesn't
-    # silently emit zero bytes — splat's custom sections (e.g. .header,
-    # .pdata without exec) get tagged READONLY-only by GAS and would
-    # otherwise be filtered out of the binary dump.
-    _run(
-        [
-            objcopy,
-            "--set-section-flags", f"{section}=alloc,load,data",
-            "-O", "binary", "-j", section,
-            str(o_path), str(bin_path),
-        ],
-        verbose,
-    )
-    if not bin_path.exists():
-        return b""
-    return bin_path.read_bytes()
-
-
 def _run(
     cmd: List[str], verbose: bool, cwd: Optional[Path] = None
 ) -> None:
@@ -195,64 +76,152 @@ def _run(
         log.error(f"win32_reassemble: command failed: {cmd[0]}")
 
 
+def _collect_sources(
+    asm_path: Path, data_path: Path, asset_path: Path
+) -> "tuple[List[Path], List[Path]]":
+    """Return (.s sources, .bin assets) under the splat-configured
+    source directories."""
+    s_paths: List[Path] = []
+    seen = set()
+    for root in (asm_path, data_path):
+        if not root.exists():
+            continue
+        for p in sorted(root.rglob("*.s")):
+            if p in seen:
+                continue
+            seen.add(p)
+            s_paths.append(p)
+    bin_paths: List[Path] = []
+    if asset_path.exists():
+        bin_paths = sorted(asset_path.rglob("*.bin"))
+    return s_paths, bin_paths
+
+
 def reassemble(yaml_path: Path, out_path: Path, verbose: bool = False) -> Path:
-    """Drive the full assemble + objcopy pipeline for a splat-generated
-    win32 config. Returns the path to the produced PE."""
+    """Drive the full assemble + link + PE-convert pipeline for a
+    splat-generated win32 config. Returns the path to the produced PE."""
     conf = _read_yaml(yaml_path)
     opts = conf["options"]
     base_path = (yaml_path.parent / opts.get("base_path", ".")).resolve()
     asm_path = (base_path / opts.get("asm_path", "asm")).resolve()
     data_path = (base_path / opts.get("data_path", "data")).resolve()
     asset_path = (base_path / opts.get("asset_path", "assets")).resolve()
+    build_path = (base_path / opts.get("build_path", "build")).resolve()
+    ld_path = base_path / opts.get("ld_script_path", "")
+    if not ld_path.exists():
+        log.error(
+            f"win32_reassemble: linker script not found at {ld_path} — "
+            "run `python -m splat split <yaml>` first"
+        )
 
     is_pe32_plus = _detect_bitness(yaml_path, conf)
     mode_flag = "--64" if is_pe32_plus else "--32"
+    ld_emulation = "elf_x86_64" if is_pe32_plus else "elf_i386"
+    bin_obj_fmt = "elf64-x86-64" if is_pe32_plus else "elf32-i386"
+    bin_obj_arch = "i386:x86-64" if is_pe32_plus else "i386"
 
     asm_tool = _which("as")
+    ld_tool = _which("ld")
     objcopy = _which("objcopy")
 
-    segments = _walk_segments(conf)
-    # Sort by start (defensive — YAML order should already be monotonic).
-    segments.sort(key=lambda s: (s.get("start") or 0))
+    s_paths, bin_paths = _collect_sources(asm_path, data_path, asset_path)
+    if not s_paths and not bin_paths:
+        log.error(
+            "win32_reassemble: no .s or .bin sources found — run "
+            "`python -m splat split <yaml>` first"
+        )
 
+    # The splat-generated linker script references object files at
+    # `<build_path>/<source_relpath>.s.o`. Place compiled outputs
+    # there. Each .s file's relative path under asm_path / data_path
+    # is preserved under `<build_path>/asm/` to match splat's
+    # convention (asm_path is the canonical root regardless of
+    # whether the source was under asm_path or data_path).
+    def _obj_for(src: Path) -> Path:
+        for root in (asm_path, data_path):
+            try:
+                rel = src.relative_to(root)
+                return build_path / "asm" / rel.with_suffix(rel.suffix + ".o")
+            except ValueError:
+                continue
+        return src.with_suffix(src.suffix + ".o")
+
+    for s_path in s_paths:
+        o_path = _obj_for(s_path)
+        o_path.parent.mkdir(parents=True, exist_ok=True)
+        _run([asm_tool, mode_flag, str(s_path), "-o", str(o_path)], verbose)
+
+    # Wrap .bin assets so ld can link them. (Splat's win32
+    # auto-config currently emits .reloc / .rsrc / coff_symtab /
+    # signature as bin segments — each lands in the linker script
+    # via its own SECTION block.)
+    for bin_path in bin_paths:
+        # Mirror the same build/asm/<rel>.s.o naming convention so
+        # the linker script can reference them uniformly.
+        try:
+            rel = bin_path.relative_to(asset_path)
+        except ValueError:
+            rel = Path(bin_path.name)
+        o_path = build_path / "asm" / rel.with_suffix(".bin.o")
+        o_path.parent.mkdir(parents=True, exist_ok=True)
+        _run(
+            [
+                objcopy,
+                "-I", "binary",
+                "-O", bin_obj_fmt,
+                "-B", bin_obj_arch,
+                str(bin_path), str(o_path),
+            ],
+            verbose,
+        )
+
+    # Link via the splat-generated linker script. Run from base_path
+    # so the script's `build/asm/...` references resolve.
     with tempfile.TemporaryDirectory(prefix="splat-reasm-") as td:
-        tmpdir = Path(td)
-        blob = bytearray()
-        prev_end = 0
-        for seg in segments:
-            start = seg.get("start") or 0
-            # Pad with zero up to this segment's rom_start.
-            if start > prev_end:
-                blob.extend(b"\x00" * (start - prev_end))
-                prev_end = start
-            elif start < prev_end:
-                # BSS segments overlap virtually but have no file presence.
-                pass
-            s_type = seg["type"]
-            section = _SECTION_FOR_TYPE.get(s_type, ".data")
-            if section == "__BSS__":
-                # Zero-filled, no file bytes.
-                continue
-            src = _segment_source(base_path, asm_path, data_path, asset_path, seg)
-            if src is None:
-                if verbose:
-                    print(f"  ({seg['name']}: no source — skipping)")
-                continue
-            if section == "__BIN__":
-                payload = src.read_bytes()
-            else:
-                payload = _extract_section_bytes(
-                    asm_tool, objcopy, src, section, mode_flag, tmpdir, verbose
-                )
-            blob.extend(payload)
-            prev_end = start + len(payload)
-
+        elf_path = Path(td) / "linked.elf"
+        # -N (omagic): produce an ELF without page-aligned segments —
+        # the splat .ld layout packs sections contiguously by LMA and
+        # would otherwise blow past the program-header capacity.
+        _run(
+            [
+                ld_tool, "-m", ld_emulation, "-N",
+                "-T", ld_path.name,
+                "-o", str(elf_path),
+            ],
+            verbose,
+            cwd=base_path,
+        )
+        # Force alloc/load on splat's custom .header section so the
+        # binary extraction includes it. GAS marks .header as
+        # READONLY-only because there's no exec/write flag in the
+        # `.section .header` line; that's enough for the linker but
+        # makes `-O binary` skip the bytes.
+        _run(
+            [
+                objcopy,
+                "--set-section-flags", ".header=alloc,load,data",
+                str(elf_path),
+            ],
+            verbose,
+        )
+        # Extract the loaded image as a raw byte blob — the splat
+        # `.header` section already contains the full PE header
+        # (DOS stub + COFF + optional header + section table) and
+        # every other section is positioned at its file-offset by
+        # the linker script. Wrapping with `-O pei-*` would prepend
+        # a second PE header; we just want the bytes verbatim.
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(bytes(blob))
+        _run(
+            [objcopy, "-O", "binary", str(elf_path), str(out_path)],
+            verbose,
+        )
 
     if verbose:
         sha = hashlib.sha1(out_path.read_bytes()).hexdigest()
-        print(f"Produced {out_path} ({len(out_path.read_bytes())} bytes, sha1 {sha})")
+        print(
+            f"Produced {out_path} "
+            f"({len(out_path.read_bytes())} bytes, sha1 {sha})"
+        )
 
     return out_path
 
