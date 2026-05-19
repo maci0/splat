@@ -33,3 +33,7 @@ splat64[mips]>=0.40.0,<1.0.0
 ### Gamecube / Wii
 
 For Gamecube / Wii projects, see [decomp-toolkit](https://github.com/encounter/decomp-toolkit)!
+
+### Win32 PE support
+
+The `win32` platform handles PE32 (x86) and PE32+ (x86_64) binaries built by MSVC 4.x-14.x, MinGW (libgcc-linked), and Clang-LLD. Decoded directories include exports, imports, delay imports, bound imports, resources, exception/SEH tables (with unwind-info opcode lists), TLS, /GS + /SAFESEH + /guard:cf load-config, base relocations, debug (CodeView PDB GUID/age extraction), the CLR runtime header (.NET assemblies), and the deprecated COFF symbol table. `python -m splat split <yaml>` produces GAS-clean assembly; `python -m splat.scripts.create_config <binary>` auto-generates a YAML + symbol_addrs.txt; and `python -m splat.scripts.win32_reassemble <yaml>` reconstructs the PE (byte-identical when `exact_encoding: true` is set on text + data subsegments).
