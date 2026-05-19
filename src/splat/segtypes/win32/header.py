@@ -340,6 +340,40 @@ class Win32SegHeader(CommonSegHeader):
                 f" *   COFF symbols:      {pe.coff_num_symbols} at file 0x{pe.coff_symtab_ptr:X}"
                 "  (deprecated; unusual for PEs)"
             )
+            if pe.coff_symbols:
+                shown = pe.coff_symbols[:8]
+                out.append(
+                    f" *     Sample symbols ({len(shown)} of {len(pe.coff_symbols)}):"
+                )
+                for sym in shown:
+                    out.append(
+                        f" *       {sym.name!s:<24s} value=0x{sym.value:08X}"
+                        f" section={sym.section_number} class={sym.storage_class}"
+                    )
+        if pe.clr_header is not None:
+            out.append(
+                f" *   .NET CLR header:   v{pe.clr_header.runtime_major}."
+                f"{pe.clr_header.runtime_minor}"
+                f"  flags=0x{pe.clr_header.flags:X}"
+            )
+            out.append(
+                f" *     Metadata:        RVA 0x{pe.clr_header.metadata_rva:X}"
+                f"  size 0x{pe.clr_header.metadata_size:X}"
+            )
+            out.append(
+                f" *     EntryPoint token: 0x{pe.clr_header.entry_point_token_or_rva:08X}"
+            )
+            if pe.clr_header.strong_name_signature_rva:
+                out.append(
+                    f" *     Strong-name sig: RVA "
+                    f"0x{pe.clr_header.strong_name_signature_rva:X}"
+                    f"  size 0x{pe.clr_header.strong_name_signature_size:X}"
+                )
+        if pe.unwind_info:
+            out.append(
+                f" *   Unwind records:    {len(pe.unwind_info)} decoded "
+                f"IMAGE_UNWIND_INFO blobs (PE32+ SEH)"
+            )
         if pe.timestamp:
             import datetime as _dt
 
