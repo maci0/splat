@@ -21,6 +21,7 @@ HEADER_SIZE = FILE_ALIGN
 
 TEXT_RVA = 0x1000
 RDATA_RVA = 0x2000
+PDATA_RVA = 0x3000
 
 # A tiny x86_64 program:
 #   mov rax, [rip + 0xFF6]   ; load 64-bit value from .rdata (insn at 0x140001000,
@@ -40,6 +41,10 @@ TEXT_BODY = bytes(
 RDATA_BODY = bytes(
     [0xEF, 0xBE, 0xAD, 0xDE, 0x00, 0x00, 0x00, 0x00]
 )
+
+# A single RUNTIME_FUNCTION record covering the body of our tiny text
+# routine — (BeginRVA=0x1000, EndRVA=0x100D, UnwindInfoRVA=0x4000).
+PDATA_BODY = struct.pack("<III", 0x1000, 0x100D, 0x4000)
 
 
 def make_section_header(name, virt_size, virt_addr, raw_size, raw_ptr, chars):
@@ -73,7 +78,7 @@ def build_pe() -> bytes:
     # = 28 + 88 + 128 = 244 = 0xF4 nominal, but standard size is 0xF0).
     size_of_optional_header = 0xF0
     characteristics = 0x0022  # EXECUTABLE_IMAGE | LARGE_ADDRESS_AWARE
-    num_sections = 2
+    num_sections = 3
     coff = struct.pack(
         "<HHIIIHH",
         0x8664,                       # Machine = x86_64
@@ -89,7 +94,9 @@ def build_pe() -> bytes:
     text_raw_ptr = HEADER_SIZE
     rdata_raw_size = (len(RDATA_BODY) + FILE_ALIGN - 1) & ~(FILE_ALIGN - 1)
     rdata_raw_ptr = text_raw_ptr + text_raw_size
-    size_of_image = ((RDATA_RVA + len(RDATA_BODY)) + SECTION_ALIGN - 1) & ~(
+    pdata_raw_size = (len(PDATA_BODY) + FILE_ALIGN - 1) & ~(FILE_ALIGN - 1)
+    pdata_raw_ptr = rdata_raw_ptr + rdata_raw_size
+    size_of_image = ((PDATA_RVA + len(PDATA_BODY)) + SECTION_ALIGN - 1) & ~(
         SECTION_ALIGN - 1
     )
 
@@ -142,13 +149,25 @@ def build_pe() -> bytes:
         rdata_raw_ptr,
         0x40000040,
     )
+    sec_pdata = make_section_header(
+        b".pdata",
+        len(PDATA_BODY),
+        PDATA_RVA,
+        pdata_raw_size,
+        pdata_raw_ptr,
+        0x40000040,
+    )
 
-    buf = bytearray(full_dos + pe_sig + coff + opt + sec_text + sec_rdata)
+    buf = bytearray(
+        full_dos + pe_sig + coff + opt + sec_text + sec_rdata + sec_pdata
+    )
     buf = buf.ljust(HEADER_SIZE, b"\x00")
     buf += TEXT_BODY
     buf = buf.ljust(text_raw_ptr + text_raw_size, b"\x00")
     buf += RDATA_BODY
     buf = buf.ljust(rdata_raw_ptr + rdata_raw_size, b"\x00")
+    buf += PDATA_BODY
+    buf = buf.ljust(pdata_raw_ptr + pdata_raw_size, b"\x00")
     return bytes(buf)
 
 

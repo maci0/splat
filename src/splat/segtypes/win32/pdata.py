@@ -73,13 +73,21 @@ class Win32SegPdata(CommonSegment):
             while i + 12 <= n:
                 begin, end, unwind = struct.unpack_from("<III", data, i)
                 if begin == 0 and end == 0 and unwind == 0:
-                    # Null terminator — emit literally so layout matches.
+                    # Null terminator — emit it and switch to a .space
+                    # block for any remaining padding so the output isn't
+                    # dominated by hundreds of zero rows.
                     f.write(
                         "    .long 0, 0, 0  /* RUNTIME_FUNCTION terminator */\n"
                     )
                     i += 12
                     entry_index += 1
-                    continue
+                    pad = n - i
+                    if pad > 0:
+                        f.write(
+                            f"    .space 0x{pad:X}  /* zero padding to section end */\n"
+                        )
+                    i = n
+                    break
                 f.write(
                     f"    .long {resolve_func_rva(begin)} - 0x{pe.image_base:X}"
                     f", {resolve_func_rva(end)} - 0x{pe.image_base:X}"
@@ -89,7 +97,8 @@ class Win32SegPdata(CommonSegment):
                 i += 12
                 entry_index += 1
 
-            # Any trailing bytes (shouldn't happen with valid .pdata).
+            # Trailing bytes that don't form a complete 12-byte record
+            # (shouldn't happen with valid .pdata, but be defensive).
             if i < n:
                 tail = data[i:]
                 hexed = ", ".join(f"0x{b:02X}" for b in tail)

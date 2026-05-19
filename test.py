@@ -179,6 +179,15 @@ class Testing(unittest.TestCase):
         # Round-trip: the output must assemble cleanly with GAS.
         self._assert_assembles(split_dir / "asm/main_text.s", "--64")
 
+        # Win32SegPdata renders the RUNTIME_FUNCTION record as a
+        # structured `.long … RUNTIME_FUNCTION` row (vs an opaque byte
+        # blob). The single record in the fixture covers our text body.
+        pdata_path = split_dir / "data/main_pdata.s"
+        if pdata_path.exists():
+            pdata = pdata_path.read_text(encoding="utf-8")
+            self.assertIn("RUNTIME_FUNCTION", pdata)
+            self.assertIn(".pdata", pdata)
+
     def _assert_assembles(self, asm_path: Path, mode_flag: str) -> None:
         """Invoke `as` to assemble the given file. Skip silently if `as`
         isn't available; fail loudly if it is and rejects the file."""

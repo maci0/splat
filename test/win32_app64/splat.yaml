@@ -35,4 +35,11 @@ segments:
     subsegments:
       - [0x400, rodata, main_rdata]
 
-  - [0x600]
+  - name: pdata
+    type: code
+    start: 0x600
+    vram: 0x140003000
+    subsegments:
+      - [0x600, pdata, main_pdata]
+
+  - [0x800]
