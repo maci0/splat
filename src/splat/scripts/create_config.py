@@ -555,28 +555,28 @@ options:
     # replaces it) but vintage MSVC 4-6 binaries still ship it past the
     # last raw-data section. The trailing `[len(exe_bytes)]` entry
     # delimits its end.
+    # Post-section appendages (COFF symtab, Authenticode signature) sit
+    # past the last section's raw bytes. Collect them, sort by file
+    # offset, and emit in order — splat requires segments to be
+    # monotonically increasing by rom_start.
+    tail_segs: List[tuple] = []
     if (
         pe.coff_symtab_ptr
         and pe.coff_num_symbols
         and pe.coff_symtab_ptr < len(exe_bytes)
     ):
-        segments += (
-            f"  - {{ name: coff_symtab, type: bin, "
-            f"start: 0x{pe.coff_symtab_ptr:X} }}\n\n"
-        )
-
-    # Authenticode signature: directory entry 4 (Certificate Table) is
-    # a FILE offset / size pair (unlike the RVA-based entries). When
-    # set, the signature bytes live past the last section. Emit a
-    # `signature` bin segment so the bytes are extracted into a known
-    # file instead of swept into the unknown-tail.
+        tail_segs.append((pe.coff_symtab_ptr, "coff_symtab"))
     if len(pe.data_directories) > 4:
         cert_ptr, cert_size = pe.data_directories[4]
+        # Authenticode signature: directory entry 4 (Certificate Table)
+        # is a FILE offset / size pair (unlike the RVA-based entries).
         if cert_ptr and cert_size and cert_ptr < len(exe_bytes):
-            segments += (
-                f"  - {{ name: signature, type: bin, "
-                f"start: 0x{cert_ptr:X} }}\n\n"
-            )
+            tail_segs.append((cert_ptr, "signature"))
+    for start, name in sorted(tail_segs, key=lambda t: t[0]):
+        segments += (
+            f"  - {{ name: {name}, type: bin, "
+            f"start: 0x{start:X} }}\n\n"
+        )
 
     segments += f"  - [0x{len(exe_bytes):X}]\n"
 

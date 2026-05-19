@@ -1947,6 +1947,60 @@ class PERelocsTest(unittest.TestCase):
         self.assertEqual(pe.pointer_rvas, {0x3010, 0x3020})
 
 
+class CreateConfigTailSegmentSortTest(unittest.TestCase):
+    def test_coff_symtab_and_signature_emit_in_file_order(self):
+        """When both a COFF symbol table and an Authenticode signature
+        are present, their YAML segments must appear in file-offset
+        order — splat rejects non-monotonic rom_start values."""
+        body = b"\x90" * FILE_ALIGN
+        # Lay out: header(0x200) + .text(0x200) + symtab(0x40) + sig(0x40)
+        symtab_off = FILE_ALIGN * 2
+        symtab_size = 0x40
+        sig_off = symtab_off + symtab_size
+        sig_size = 0x40
+
+        data_dirs = [(0, 0)] * 4 + [(sig_off, sig_size)] + [(0, 0)] * 11
+        sec = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678,
+            symtab_off, 4, 0xE0, 0x010F,
+        )
+        opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
+        for i, (rva, size) in enumerate(data_dirs):
+            struct.pack_into("<II", opt, 96 + i * 8, rva, size)
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = (
+            bytearray(header) + body
+            + b"\x00" * symtab_size
+            + b"\x00" * sig_size
+        )
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-sort-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "both.exe"
+            exe.write_bytes(bytes(buf))
+            create_win32_config(exe, bytes(buf))
+            yaml_txt = (tmpdir / "both.exe.yaml").read_text()
+            # coff_symtab must appear before signature (file order).
+            symtab_idx = yaml_txt.index("name: coff_symtab")
+            sig_idx = yaml_txt.index("name: signature")
+            self.assertLess(symtab_idx, sig_idx)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigAuthenticodeSegmentTest(unittest.TestCase):
     def test_certificate_table_emits_bin_segment(self):
         """An Authenticode-signed PE has data directory 4 set to the
