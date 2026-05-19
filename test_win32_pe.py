@@ -825,6 +825,49 @@ class PEResourcesTest(unittest.TestCase):
 
 
 class PELoadConfigTest(unittest.TestCase):
+    def test_pe32_cookie_only_no_safeseh(self):
+        """LoadConfig with /GS but without /SAFESEH (SEHandlerTable == 0).
+        Verify security_cookie_va is captured and safe_seh_handlers
+        stays empty rather than reading garbage."""
+        rdata_rva = 0x2000
+        rdata_rptr = FILE_ALIGN * 2
+
+        body = bytearray(0x80)
+        struct.pack_into("<I", body, 0, 0x48)            # Size
+        struct.pack_into("<I", body, 0x3C, IMAGE_BASE + rdata_rva + 0x60)  # cookie
+        # 0x40 + 0x44 stay zero: no SafeSEH
+
+        pe_bytes = _build_pe(
+            sections=[
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
+            ],
+            data_dirs=[
+                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0), (0, 0), (0, 0), (0, 0),
+                (rdata_rva, 0x48),
+            ],
+        )
+        pe = win32_platform.parse_pe(pe_bytes)
+        self.assertEqual(pe.security_cookie_va, IMAGE_BASE + rdata_rva + 0x60)
+        self.assertEqual(pe.safe_seh_handlers, [])
+
     def test_pe32_security_cookie_and_safeseh(self):
         rdata_rva = 0x2000
         rdata_rptr = FILE_ALIGN * 2
