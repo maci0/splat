@@ -189,6 +189,13 @@ class PEInfo:
         return None
 
     def rva_to_file_offset(self, rva: int) -> Optional[int]:
+        """Translate an RVA to its on-disk file offset, or None when
+        the RVA isn't backed by file bytes — either because it falls
+        outside every section's virtual range or because it sits in
+        the virtual-only tail of a section whose VirtualSize exceeds
+        SizeOfRawData (loader zero-fills that range; no file bytes
+        back it). Callers must handle None to avoid reading into a
+        neighbouring section's data."""
         for s in self.sections:
             sec_end = s.virtual_address + max(s.virtual_size, s.raw_size)
             if not (s.virtual_address <= rva < sec_end):
@@ -206,6 +213,9 @@ class PEInfo:
         return None
 
     def va_to_file_offset(self, va: int) -> Optional[int]:
+        """Translate an image-base-relative virtual address to a file
+        offset. Convenience wrapper that subtracts `image_base` and
+        delegates to `rva_to_file_offset`; same None semantics."""
         return self.rva_to_file_offset(va - self.image_base)
 
 
