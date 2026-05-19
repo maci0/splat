@@ -240,8 +240,10 @@ class Testing(unittest.TestCase):
         for needle in ("push ebp", "mov ebp, esp", "mov eax, 0x2a", "ret"):
             self.assertIn(needle, text)
 
-        # Round-trip: the output must assemble cleanly with GAS.
-        self._assert_assembles(split_dir / "asm/main_text.s", "--32")
+        # Round-trip: every generated .s file must assemble cleanly with
+        # GAS. Covers header, text, data, bss simultaneously.
+        for asm in sorted(split_dir.rglob("*.s")):
+            self._assert_assembles(asm, "--32")
 
     def test_win32_exact_encoding(self):
         """`exact_encoding: true` must produce a byte-identical .text
