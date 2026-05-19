@@ -66,10 +66,11 @@ _SCALAR_SSE_SINGLE = {
     "minss", "maxss", "sqrtss", "cvtsi2ss", "cvtss2si", "cvttss2si",
     "cvtss2sd", "movss",
 }
-# Matches `[rip + 0xN]` / `[rip - 0xN]` — needed for PE32+ RIP-relative
-# memory operands, where the absolute target = insn.address + insn.size + disp.
+# Matches `[rip + 0xN]` / `[rip - 0xN]` / `[rip]` (the last when disp == 0
+# — capstone elides the literal). Needed for PE32+ RIP-relative memory
+# operands, where the absolute target = insn.address + insn.size + disp.
 _RIP_REL_RE = re.compile(
-    r"\[rip\s*(?P<sign>[+-])\s*0x(?P<hex>[0-9a-fA-F]+)\]"
+    r"\[rip(?:\s*(?P<sign>[+-])\s*0x(?P<hex>[0-9a-fA-F]+))?\]"
 )
 
 
@@ -421,7 +422,9 @@ class Win32SegText(CommonSegment):
             next_ip = insn.address + insn.size
 
             def rip_repl(match: "re.Match") -> str:
-                disp = int(match.group("hex"), 16)
+                # `[rip]` with no displacement → disp = 0.
+                hex_grp = match.group("hex")
+                disp = int(hex_grp, 16) if hex_grp else 0
                 if match.group("sign") == "-":
                     disp = -disp
                 target = (next_ip + disp) & 0xFFFFFFFFFFFFFFFF
