@@ -24,6 +24,12 @@ MACHINE_AMD64 = 0x8664
 MACHINE_ARM32 = 0x01C4  # ARMv7 Thumb-2 (Windows on ARM 32-bit)
 MACHINE_ARM64 = 0xAA64  # AArch64 (Windows on ARM 64-bit)
 
+# IMAGE_OPTIONAL_HEADER.Magic — identifies which optional-header
+# layout follows (PE32 has 32-bit fields for ImageBase etc., PE32+
+# has 64-bit equivalents).
+OPT_MAGIC_PE32 = 0x10B
+OPT_MAGIC_PE32_PLUS = 0x20B
+
 # Section header flags (IMAGE_SCN_*)
 SCN_CNT_CODE = 0x00000020
 SCN_CNT_INITIALIZED_DATA = 0x00000040
@@ -332,8 +338,8 @@ def parse_pe(data: bytes) -> PEInfo:
         log.error("win32 optional header runs past end of file")
 
     magic = struct.unpack_from("<H", data, opt_off)[0]
-    is_pe32_plus = magic == 0x20B
-    if magic not in (0x10B, 0x20B):
+    is_pe32_plus = magic == OPT_MAGIC_PE32_PLUS
+    if magic not in (OPT_MAGIC_PE32, OPT_MAGIC_PE32_PLUS):
         log.error(f"win32 target has unknown optional header magic 0x{magic:04X}")
 
     # Cross-validate Machine vs Optional Header magic: i386 / ARM32 are

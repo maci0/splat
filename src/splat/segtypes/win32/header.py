@@ -526,7 +526,7 @@ class Win32SegHeader(CommonSegHeader):
             return out
 
         magic = struct.unpack_from("<H", rom_bytes, opt_off)[0]
-        is_pe32_plus = magic == 0x20B
+        is_pe32_plus = magic == win32_platform.OPT_MAGIC_PE32_PLUS
         size_int = 8 if is_pe32_plus else 4
         size_typ = "quad" if is_pe32_plus else "long"
 
