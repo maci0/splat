@@ -565,6 +565,19 @@ options:
             f"start: 0x{pe.coff_symtab_ptr:X} }}\n\n"
         )
 
+    # Authenticode signature: directory entry 4 (Certificate Table) is
+    # a FILE offset / size pair (unlike the RVA-based entries). When
+    # set, the signature bytes live past the last section. Emit a
+    # `signature` bin segment so the bytes are extracted into a known
+    # file instead of swept into the unknown-tail.
+    if len(pe.data_directories) > 4:
+        cert_ptr, cert_size = pe.data_directories[4]
+        if cert_ptr and cert_size and cert_ptr < len(exe_bytes):
+            segments += (
+                f"  - {{ name: signature, type: bin, "
+                f"start: 0x{cert_ptr:X} }}\n\n"
+            )
+
     segments += f"  - [0x{len(exe_bytes):X}]\n"
 
     out_file = Path(f"{cleaned_basename}.yaml")

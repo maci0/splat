@@ -1947,6 +1947,55 @@ class PERelocsTest(unittest.TestCase):
         self.assertEqual(pe.pointer_rvas, {0x3010, 0x3020})
 
 
+class CreateConfigAuthenticodeSegmentTest(unittest.TestCase):
+    def test_certificate_table_emits_bin_segment(self):
+        """An Authenticode-signed PE has data directory 4 set to the
+        signature blob's FILE offset (unlike the RVA-based directories).
+        Auto-config should emit a `signature` bin segment so the bytes
+        are split into a known file."""
+        body = b"\x90" * FILE_ALIGN
+        sig_data = b"\x00" * 0x40  # placeholder signature blob
+        sig_off = FILE_ALIGN * 2
+        sig_size = len(sig_data)
+
+        # Data directory 4 = (FILE offset, size).
+        data_dirs = [(0, 0)] * 4 + [(sig_off, sig_size)] + [(0, 0)] * 11
+
+        sec_text = _section_header(
+            b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
+        )
+        coff = struct.pack(
+            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, 0xE0, 0x010F,
+        )
+        opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
+        # Patch in the data directories starting at offset 96.
+        for i, (rva, size) in enumerate(data_dirs):
+            struct.pack_into("<II", opt, 96 + i * 8, rva, size)
+        header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec_text
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        buf = bytearray(header) + body + sig_data
+
+        import os
+        import tempfile
+        import shutil
+        from src.splat.scripts.create_config import create_win32_config
+        from pathlib import Path as _P
+
+        tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-sig-"))
+        cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            exe = tmpdir / "signed.exe"
+            exe.write_bytes(bytes(buf))
+            create_win32_config(exe, bytes(buf))
+            yaml_txt = (tmpdir / "signed.exe.yaml").read_text()
+            self.assertIn("name: signature", yaml_txt)
+            self.assertIn(f"start: 0x{sig_off:X}", yaml_txt)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class CreateConfigCoffSymtabSegmentTest(unittest.TestCase):
     def test_coff_symtab_pointer_emits_bin_segment(self):
         """Vintage MSVC 4-6 binaries can embed a deprecated COFF symbol
