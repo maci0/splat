@@ -2149,6 +2149,31 @@ class PEEdgeCasesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             win32_platform.init(blob)
 
+    def test_sub_minimum_optional_header_size(self):
+        """Optional header smaller than the per-format minimum (96 for
+        PE32, 112 for PE32+) can't fit the data-directory offsets we
+        expect to read. Parser must reject."""
+        coff_off = 0x40 + 4
+        # PE32 optional header but declared size 32 (less than the 96
+        # required for windows-specific + data-directories).
+        coff = struct.pack(
+            "<HHIIIHH",
+            0x014C, 0, 0x12345678, 0, 0, 32, 0x010F,
+        )
+        # First 32 bytes of a PE32 optional header (just standard fields).
+        opt = struct.pack(
+            "<HBBIIIIIII",
+            0x010B, 6, 0,
+            0x200, 0x200, 0,
+            0x1000, 0x1000, 0x2000,
+            0x400000,
+        )
+        assert len(opt) == 32
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt
+        header = header.ljust(FILE_ALIGN, b"\x00")
+        with self.assertRaises(SystemExit):
+            win32_platform.parse_pe(bytes(header))
+
     def test_unknown_optional_header_magic(self):
         """Optional header magic must be 0x10B (PE32) or 0x20B (PE32+).
         Older formats like ROM image (0x107) or future values must be
