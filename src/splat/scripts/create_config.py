@@ -39,7 +39,10 @@ def main(file_path: Path, objcopy: Optional[str]):
     # Check for Win32 PE
     if file_bytes[0:2] == b"MZ" and len(file_bytes) >= 0x40:
         pe_off = int.from_bytes(file_bytes[0x3C:0x40], "little")
-        if pe_off + 4 <= len(file_bytes) and file_bytes[pe_off : pe_off + 4] == b"PE\x00\x00":
+        if (
+            pe_off + 4 <= len(file_bytes)
+            and file_bytes[pe_off : pe_off + 4] == b"PE\x00\x00"
+        ):
             create_win32_config(file_path, file_bytes)
             return
 
@@ -383,7 +386,13 @@ segments:
 
 def create_win32_config(exe_path: Path, exe_bytes: bytes):
     from ..platforms import win32 as _w32
-    from ..platforms.win32 import parse_pe, SCN_CNT_CODE, SCN_CNT_UNINITIALIZED_DATA, SCN_MEM_EXECUTE, SCN_MEM_WRITE
+    from ..platforms.win32 import (
+        parse_pe,
+        SCN_CNT_CODE,
+        SCN_CNT_UNINITIALIZED_DATA,
+        SCN_MEM_EXECUTE,
+        SCN_MEM_WRITE,
+    )
 
     pe = parse_pe(exe_bytes)
     basename = exe_path.name.replace(" ", "").lower()
@@ -414,9 +423,17 @@ def create_win32_config(exe_path: Path, exe_bytes: bytes):
     # rely on the simpler heuristic: any import of `libc++.dll` or a
     # GCC runtime stamps the binary as MinGW.
     _LINKER_TO_MSVC = {
-        2: "MSVC2", 3: "MSVC4", 4: "MSVC4", 5: "MSVC5",
-        6: "MSVC6", 7: "MSVC7", 8: "MSVC8", 9: "MSVC9",
-        10: "MSVC10", 11: "MSVC11", 12: "MSVC12",
+        2: "MSVC2",
+        3: "MSVC4",
+        4: "MSVC4",
+        5: "MSVC5",
+        6: "MSVC6",
+        7: "MSVC7",
+        8: "MSVC8",
+        9: "MSVC9",
+        10: "MSVC10",
+        11: "MSVC11",
+        12: "MSVC12",
         14: "MSVC14",
     }
 
@@ -425,9 +442,12 @@ def create_win32_config(exe_path: Path, exe_bytes: bytes):
         # MinGW (gcc-linked) signatures: links to libgcc, libstdc++,
         # libwinpthread, or has a .CRT section.
         mingw_dlls = {
-            "libgcc_s_dw2-1.dll", "libgcc_s_seh-1.dll",
-            "libstdc++-6.dll", "libwinpthread-1.dll",
-            "libgcc_s.dll", "libssp-0.dll",
+            "libgcc_s_dw2-1.dll",
+            "libgcc_s_seh-1.dll",
+            "libstdc++-6.dll",
+            "libwinpthread-1.dll",
+            "libgcc_s.dll",
+            "libssp-0.dll",
         }
         section_names = {s.name for s in pe.sections}
         if dlls_lower & mingw_dlls or ".CRT" in section_names:
@@ -435,8 +455,7 @@ def create_win32_config(exe_path: Path, exe_bytes: bytes):
         # LLD signature: linker_major 14 but characteristics differ.
         # Conservative: only flag if .text$mn or .rdata$zzzdebug are
         # present (LLD-specific section grouping).
-        if any(s.startswith(".text$") or s.startswith(".rdata$")
-               for s in section_names):
+        if any(s.startswith((".text$", ".rdata$")) for s in section_names):
             return "CLANG_LLD"
         return _LINKER_TO_MSVC.get(pe.linker_major, "MSVC6")
 
@@ -482,14 +501,8 @@ options:
     def _is_file_backed(s) -> bool:
         return s.raw_size > 0 and s.raw_pointer > 0
 
-    # First raw byte of the first file-backed section delimits the header.
-    first_raw = min(
-        (s.raw_pointer for s in pe.sections if _is_file_backed(s)),
-        default=pe.size_of_headers,
-    )
-
     segments = "\nsegments:\n"
-    segments += f"""\
+    segments += """\
   - name: header
     type: header
     start: 0x0
@@ -506,8 +519,7 @@ options:
         s
         for s in pe.sections
         if not _is_file_backed(s)
-        and (s.characteristics & SCN_CNT_UNINITIALIZED_DATA
-             or s.virtual_size > 0)
+        and (s.characteristics & SCN_CNT_UNINITIALIZED_DATA or s.virtual_size > 0)
     ]
 
     # Disambiguate duplicate section names (PE spec doesn't require
@@ -637,9 +649,7 @@ options:
 
     symbol_addrs: List[str] = []
     if pe.entry_point_rva:
-        symbol_addrs.append(
-            f"entrypoint = 0x{pe.entry_point_va:08X}; // type:func"
-        )
+        symbol_addrs.append(f"entrypoint = 0x{pe.entry_point_va:08X}; // type:func")
     export_labels = _w32.compute_export_labels(
         pe, reserved={"entrypoint"} if pe.entry_point_rva else set()
     )
@@ -678,7 +688,9 @@ options:
     iat_labels = _w32.compute_iat_labels(pe)
     if pe.imports:
         symbol_addrs.append("")
-        symbol_addrs.append("// IAT slots (each `call dword ptr [<va>]` reaches one of these)")
+        symbol_addrs.append(
+            "// IAT slots (each `call dword ptr [<va>]` reaches one of these)"
+        )
         for imp in pe.imports:
             slot_va = pe.image_base + imp.iat_rva
             full = iat_labels.get(slot_va)
@@ -691,7 +703,9 @@ options:
 
     if pe.delay_imports:
         symbol_addrs.append("")
-        symbol_addrs.append("// Delay-load IAT slots (resolved on first call via __delayLoadHelper2)")
+        symbol_addrs.append(
+            "// Delay-load IAT slots (resolved on first call via __delayLoadHelper2)"
+        )
         for imp in pe.delay_imports:
             slot_va = pe.image_base + imp.iat_rva
             full = iat_labels.get(slot_va)
@@ -709,9 +723,7 @@ options:
             "(ECMA-335) and entry-point token."
         )
         md_va = pe.image_base + pe.clr_header.metadata_rva
-        symbol_addrs.append(
-            f"clr_metadata = 0x{md_va:08X}; // type:u8"
-        )
+        symbol_addrs.append(f"clr_metadata = 0x{md_va:08X}; // type:u8")
         if pe.clr_header.strong_name_signature_rva:
             sn_va = pe.image_base + pe.clr_header.strong_name_signature_rva
             symbol_addrs.append(
@@ -719,9 +731,7 @@ options:
             )
         if pe.clr_header.resources_rva:
             res_va = pe.image_base + pe.clr_header.resources_rva
-            symbol_addrs.append(
-                f"clr_resources = 0x{res_va:08X}; // type:u8"
-            )
+            symbol_addrs.append(f"clr_resources = 0x{res_va:08X}; // type:u8")
 
     if pe.security_cookie_va:
         symbol_addrs.append("")
@@ -738,9 +748,7 @@ options:
             "// TLS callbacks (run by the loader before DllMain / entrypoint)"
         )
         for idx, cb_va in enumerate(pe.tls_callback_vas):
-            symbol_addrs.append(
-                f"tls_callback_{idx} = 0x{cb_va:08X}; // type:func"
-            )
+            symbol_addrs.append(f"tls_callback_{idx} = 0x{cb_va:08X}; // type:func")
 
     if pe.safe_seh_handlers:
         symbol_addrs.append("")
@@ -815,13 +823,18 @@ options:
         f"{len(pe.imports)} imports" if pe.imports else None,
         f"{len(pe.delay_imports)} delay-imports" if pe.delay_imports else None,
         f"{len(pe.tls_callback_vas)} TLS callbacks" if pe.tls_callback_vas else None,
-        f"{len(pe.safe_seh_handlers)} SafeSEH handlers" if pe.safe_seh_handlers else None,
+        f"{len(pe.safe_seh_handlers)} SafeSEH handlers"
+        if pe.safe_seh_handlers
+        else None,
         f"{len(pe.cfg_function_rvas)} CFG targets" if pe.cfg_function_rvas else None,
-        f"{len(pe.runtime_functions)} RUNTIME_FUNCTIONs" if pe.runtime_functions else None,
+        f"{len(pe.runtime_functions)} RUNTIME_FUNCTIONs"
+        if pe.runtime_functions
+        else None,
         f"{len(pe.unwind_info)} unwind records" if pe.unwind_info else None,
         f"{len(pe.coff_symbols)} COFF symbols" if pe.coff_symbols else None,
         f".NET v{pe.clr_header.runtime_major}.{pe.clr_header.runtime_minor}"
-            if pe.clr_header else None,
+        if pe.clr_header
+        else None,
     ]
     summary = ", ".join(p for p in parts if p)
     print(f"Detected: {summary}.")
@@ -1000,7 +1013,7 @@ def find_objcopy() -> str:
     ]
 
     for name in options:
-        sub = subprocess.run([name, "--version"], capture_output=True)
+        sub = subprocess.run([name, "--version"], capture_output=True, check=False)
         if sub.returncode == 0:
             return name
 
@@ -1014,7 +1027,7 @@ def find_objcopy() -> str:
 def run_objcopy(objcopy_name: str, elf_path: str, rom: str) -> list[str]:
     cmd = [objcopy_name, "-O", "binary", "--gap-fill=0x00", elf_path, rom]
     print("Running:", " ".join(cmd))
-    sub = subprocess.run(cmd)
+    sub = subprocess.run(cmd, check=False)
     if sub.returncode != 0:
         log.error("Failed to run objcopy")
     return cmd

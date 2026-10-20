@@ -12,6 +12,7 @@ class SplatOpts:
     # Debug / logging
     verbose: bool
     dump_symbols: bool
+    dump_symbols_references: bool
     modes: List[str]
 
     # Project configuration
@@ -238,6 +239,12 @@ class SplatOpts:
     rodata_string_guesser_level: Optional[int]
     # Global option for the data string guesser. 0 disables the guesser completely.
     data_string_guesser_level: Optional[int]
+    # Tells the disassembler whether to create dummy and unreferenced data symbols after another symbol with non-zero user-declared size.
+    create_data_pads: Optional[bool]
+    # Tells the disassembler whether to create dummy and unreferenced rodata symbols after another symbol with non-zero user-declared size.
+    create_rodata_pads: Optional[bool]
+    # Tells the disassembler whether to create dummy and unreferenced bss/sbss symbols after another symbol with non-zero user-declared size.
+    create_bss_pads: Optional[bool]
     # Global option for allowing data symbols using addends on symbol references. It can be overriden per symbol
     allow_data_addends: bool
     # Tells the disassembler to try disassembling functions with unknown instructions instead of falling back to disassembling as raw data
@@ -364,7 +371,7 @@ class OptParser:
         elif isinstance(paths, list):
             return [base_path / path for path in paths]
         else:
-            raise ValueError(f"Expected str or list for '{opt}', got {type(paths)}")
+            raise TypeError(f"Expected str or list for '{opt}', got {type(paths)}")
 
     def check_no_unread_opts(self) -> None:
         opts = [opt for opt in self._yaml if opt not in self._read_opts]
@@ -414,7 +421,7 @@ def _parse_yaml(
             "endianness",
             str,
             ["big", "little"],
-            "little" if platform in ["psx", "ps2", "psp", "win32"] else "big",
+            "little" if platform in ["psx", "ps2", "psp"] else "big",
         )
 
         if endianness == "big":
@@ -444,12 +451,13 @@ def _parse_yaml(
         default_ld_bss_is_noload = False
 
     default_add_set_gp_64 = True
-    if platform in ("psx", "ps2", "win32"):
+    if platform in ("psx", "ps2"):
         default_add_set_gp_64 = False
 
     ret = SplatOpts(
         verbose=verbose,
         dump_symbols=p.parse_opt("dump_symbols", bool, False),
+        dump_symbols_references=p.parse_opt("dump_symbols_references", bool, False),
         modes=modes,
         base_path=base_path,
         target_path=p.parse_path(base_path, "target_path"),
@@ -524,7 +532,8 @@ def _parse_yaml(
         # an empty list there so the linker script only references the
         # subsegments that were actually emitted.
         auto_link_sections=p.parse_opt(
-            "auto_link_sections", list,
+            "auto_link_sections",
+            list,
             [] if platform == "win32" else [".data", ".rodata", ".bss"],
         ),
         ld_script_path=p.parse_path(base_path, "ld_script_path", f"{basename}.ld"),
@@ -632,6 +641,9 @@ def _parse_yaml(
         data_string_guesser_level=p.parse_optional_opt(
             "data_string_guesser_level", int
         ),
+        create_data_pads=p.parse_optional_opt("create_data_pads", bool),
+        create_rodata_pads=p.parse_optional_opt("create_rodata_pads", bool),
+        create_bss_pads=p.parse_optional_opt("create_bss_pads", bool),
         allow_data_addends=p.parse_opt("allow_data_addends", bool, True),
         header_encoding=p.parse_opt("header_encoding", str, "ASCII"),
         gfx_ucode=p.parse_opt_within(

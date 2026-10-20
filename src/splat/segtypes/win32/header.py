@@ -12,7 +12,7 @@ padding the linker inserted before the first section is preserved.
 """
 
 import struct
-from typing import List
+from typing import ClassVar, List
 
 from ..common.header import CommonSegHeader
 from ...platforms import win32 as win32_platform
@@ -158,9 +158,7 @@ class Win32SegHeader(CommonSegHeader):
         # Dump bytes 0x02..0x3C as raw bytes — the layout varies between
         # toolchains and splat just needs to round-trip them.
         out.append(self._byte_block(rom_bytes[0x02:0x3C], "DOS header tail"))
-        out.append(
-            self.get_line("long", self._le(rom_bytes[0x3C:0x40]), "e_lfanew")
-        )
+        out.append(self.get_line("long", self._le(rom_bytes[0x3C:0x40]), "e_lfanew"))
         out.append("")
 
         pe_off = pe.pe_header_offset
@@ -419,9 +417,7 @@ class Win32SegHeader(CommonSegHeader):
             age = pe.pdb_age if pe.pdb_age is not None else 0
             out.append(f" *   PDB GUID/Age:      {pe.pdb_guid}-{age}")
         if pe.tls_callback_vas:
-            cb_list = ", ".join(
-                f"0x{v:0{base_width}X}" for v in pe.tls_callback_vas
-            )
+            cb_list = ", ".join(f"0x{v:0{base_width}X}" for v in pe.tls_callback_vas)
             out.append(f" *   TLS callbacks:     {cb_list}")
         out.append(" *")
         out.append(" *   Sections:")
@@ -444,7 +440,9 @@ class Win32SegHeader(CommonSegHeader):
         if pe.exports:
             out.append(" *")
             shown = pe.exports[:8]
-            out.append(f" *   Exports ({len(pe.exports)} total; showing first {len(shown)}):")
+            out.append(
+                f" *   Exports ({len(pe.exports)} total; showing first {len(shown)}):"
+            )
             for exp in shown:
                 va = pe.image_base + exp.rva
                 if exp.forwarder is not None:
@@ -460,7 +458,9 @@ class Win32SegHeader(CommonSegHeader):
             for imp in pe.imports:
                 by_dll.setdefault(imp.dll, []).append(imp)
             out.append(" *")
-            out.append(f" *   Imports ({len(pe.imports)} total from {len(by_dll)} DLLs):")
+            out.append(
+                f" *   Imports ({len(pe.imports)} total from {len(by_dll)} DLLs):"
+            )
             for dll, items in by_dll.items():
                 out.append(f" *     {dll}: {len(items)}")
         if pe.delay_imports:
@@ -488,20 +488,14 @@ class Win32SegHeader(CommonSegHeader):
                     if bi.forwarder_refs
                     else ""
                 )
-                out.append(
-                    f" *     {bi.dll}  (ts=0x{bi.timestamp:08X}){fwds}"
-                )
+                out.append(f" *     {bi.dll}  (ts=0x{bi.timestamp:08X}){fwds}")
         if pe.security_cookie_va or pe.safe_seh_handlers or pe.cfg_function_rvas:
             out.append(" *")
             out.append(" *   Load Config:")
             if pe.security_cookie_va:
-                out.append(
-                    f" *     SecurityCookie:  0x{pe.security_cookie_va:08X}"
-                )
+                out.append(f" *     SecurityCookie:  0x{pe.security_cookie_va:08X}")
             if pe.safe_seh_handlers:
-                out.append(
-                    f" *     SafeSEH handlers: {len(pe.safe_seh_handlers)}"
-                )
+                out.append(f" *     SafeSEH handlers: {len(pe.safe_seh_handlers)}")
             if pe.cfg_function_rvas:
                 out.append(
                     f" *     CFG functions:    {len(pe.cfg_function_rvas)} (flags=0x{pe.cfg_flags:X})"
@@ -556,7 +550,7 @@ class Win32SegHeader(CommonSegHeader):
         return out
 
     # Named directory slots in the order the PE optional header stores them.
-    _DATA_DIRECTORY_NAMES = [
+    _DATA_DIRECTORY_NAMES: ClassVar[List[str]] = [
         "Export Table",
         "Import Table",
         "Resource Table",
@@ -599,7 +593,7 @@ class Win32SegHeader(CommonSegHeader):
             if off + field_size <= opt_end and off + field_size <= len(rom_bytes):
                 return True
             if not truncation_emitted[0]:
-                tail = rom_bytes[off:min(opt_end, len(rom_bytes))]
+                tail = rom_bytes[off : min(opt_end, len(rom_bytes))]
                 if tail:
                     out.append(self._byte_block(tail, f"truncated past {label}"))
                 truncation_emitted[0] = True
@@ -615,9 +609,7 @@ class Win32SegHeader(CommonSegHeader):
         def emit_long(off: int, label: str) -> None:
             if not _ensure_room(4, off, label):
                 return
-            out.append(
-                self.get_line("long", self._le(rom_bytes[off : off + 4]), label)
-            )
+            out.append(self.get_line("long", self._le(rom_bytes[off : off + 4]), label))
 
         def emit_int(off: int, label: str) -> None:
             if not _ensure_room(size_int, off, label):

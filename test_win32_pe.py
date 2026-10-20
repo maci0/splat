@@ -65,21 +65,36 @@ def _opt_header_pe32_plus(
     `Win32SegHeader._dump_optional_header` expects."""
     standard = struct.pack(
         "<HBBIIIII",
-        0x020B, 14, 0,
-        0x200, 0x200, 0,
-        entry_rva, base_of_code,
+        0x020B,
+        14,
+        0,
+        0x200,
+        0x200,
+        0,
+        entry_rva,
+        base_of_code,
     )
     windows = struct.pack(
         "<QIIHHHHHHIIIIHHQQQQII",
-        0x140000000,                 # ImageBase
-        0x1000, 0x200,               # SectionAlignment, FileAlignment
-        6, 0, 0, 0, 6, 0,
+        0x140000000,  # ImageBase
+        0x1000,
+        0x200,  # SectionAlignment, FileAlignment
+        6,
         0,
-        0x4000,                      # SizeOfImage
-        0x200,                       # SizeOfHeaders
         0,
-        3, 0,
-        0x100000, 0x1000, 0x100000, 0x1000,
+        0,
+        6,
+        0,
+        0,
+        0x4000,  # SizeOfImage
+        0x200,  # SizeOfHeaders
+        0,
+        3,
+        0,
+        0x100000,
+        0x1000,
+        0x100000,
+        0x1000,
         0,
         16,
     )
@@ -100,16 +115,22 @@ def _build_pe_plus(
     data_dirs=(),
     entry_rva=0x1000,
 ) -> bytes:
-    pe_off = 0x40
     num_sections = len(sections)
     coff = struct.pack(
         "<HHIIIHH",
-        0x8664, num_sections, 0x12345678,
-        0, 0, 0xF0, 0x002F,
+        0x8664,
+        num_sections,
+        0x12345678,
+        0,
+        0,
+        0xF0,
+        0x002F,
     )
     opt = _opt_header_pe32_plus(entry_rva, data_dirs=data_dirs)
     sec_headers = b"".join(
-        _section_header(s["name"], s["vsize"], s["vaddr"], s["rsize"], s["rptr"], s["chars"])
+        _section_header(
+            s["name"], s["vsize"], s["vaddr"], s["rsize"], s["rptr"], s["chars"]
+        )
         for s in sections
     )
     header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec_headers
@@ -131,26 +152,36 @@ def _opt_header_pe32(
 ) -> bytes:
     standard = struct.pack(
         "<HBBIIIIIIIIIHHHHHHIIIIHHIIIIII",
-        0x010B,           # Magic = PE32
-        6, 0,             # LinkerMajor/Minor
-        0x200,            # SizeOfCode
-        0x200,            # SizeOfInitializedData
-        0,                # SizeOfUninitializedData
-        entry_rva,        # AddressOfEntryPoint
+        0x010B,  # Magic = PE32
+        6,
+        0,  # LinkerMajor/Minor
+        0x200,  # SizeOfCode
+        0x200,  # SizeOfInitializedData
+        0,  # SizeOfUninitializedData
+        entry_rva,  # AddressOfEntryPoint
         base_of_code,
         base_of_data,
         IMAGE_BASE,
         SECTION_ALIGN,
         FILE_ALIGN,
-        4, 0, 0, 0, 4, 0,
-        0,                # Win32VersionValue
-        0x4000,           # SizeOfImage
-        FILE_ALIGN,       # SizeOfHeaders
-        0,                # CheckSum
-        3, 0,             # Subsystem, DllChars
-        0x100000, 0x1000, 0x100000, 0x1000,
-        0,                # LoaderFlags
-        16,               # NumberOfRvaAndSizes
+        4,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0,  # Win32VersionValue
+        0x4000,  # SizeOfImage
+        FILE_ALIGN,  # SizeOfHeaders
+        0,  # CheckSum
+        3,
+        0,  # Subsystem, DllChars
+        0x100000,
+        0x1000,
+        0x100000,
+        0x1000,
+        0,  # LoaderFlags
+        16,  # NumberOfRvaAndSizes
     )
     dirs = b""
     for i in range(16):
@@ -190,21 +221,22 @@ def _build_pe(
     data_dirs=(),
     entry_rva=0x1000,
 ) -> bytes:
-    pe_off = 0x40
     num_sections = len(sections)
     coff = struct.pack(
         "<HHIIIHH",
-        0x014C,                       # Machine i386
+        0x014C,  # Machine i386
         num_sections,
-        0x12345678,                   # TimeDateStamp
+        0x12345678,  # TimeDateStamp
         0,
         0,
-        0xE0,                         # SizeOfOptionalHeader
-        0x010F,                       # Characteristics
+        0xE0,  # SizeOfOptionalHeader
+        0x010F,  # Characteristics
     )
     opt = _opt_header_pe32(entry_rva, data_dirs=data_dirs)
     sec_headers = b"".join(
-        _section_header(s["name"], s["vsize"], s["vaddr"], s["rsize"], s["rptr"], s["chars"])
+        _section_header(
+            s["name"], s["vsize"], s["vaddr"], s["rsize"], s["rptr"], s["chars"]
+        )
         for s in sections
     )
 
@@ -254,7 +286,7 @@ class PEExportsTest(unittest.TestCase):
         # Place the export directory inside an .rdata section.
         rdata_rva = 0x2000
         rdata_rptr = FILE_ALIGN * 2
-        name_offset = 40 + 4 + 2  # past directory + funcs/names/ordinals arrays
+        40 + 4 + 2  # past directory + funcs/names/ordinals arrays
         # Layout inside .rdata:
         #   0x00: IMAGE_EXPORT_DIRECTORY
         #   0x28: function RVA array (one entry)
@@ -269,17 +301,23 @@ class PEExportsTest(unittest.TestCase):
         dll_name_rva = rdata_rva + 0x40
         export_dir = struct.pack(
             "<IIHHIIIIIII",
-            0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
             dll_name_rva,
-            1,         # ordinal base
-            1, 1,      # num funcs, num names
-            funcs_rva, names_rva, ords_rva,
+            1,  # ordinal base
+            1,
+            1,  # num funcs, num names
+            funcs_rva,
+            names_rva,
+            ords_rva,
         )
         body = bytearray(0x60)
         body[: len(export_dir)] = export_dir
-        struct.pack_into("<I", body, 0x28, 0x1000)            # func RVA → entry
+        struct.pack_into("<I", body, 0x28, 0x1000)  # func RVA → entry
         struct.pack_into("<I", body, 0x2C, func_name_rva)
-        struct.pack_into("<H", body, 0x30, 0)                  # ordinal index
+        struct.pack_into("<H", body, 0x30, 0)  # ordinal index
         body[0x32 : 0x32 + 5] = b"main\x00"
         body[0x40 : 0x40 + 10] = b"mydll.dll\x00"
 
@@ -331,15 +369,20 @@ class PEOrdinalExportTest(unittest.TestCase):
         dll_name_rva = rdata_rva + 0x32
         body = bytearray(0x80)
         struct.pack_into(
-            "<IIHHIIIIIII", body, 0x00,
-            0, 0, 0, 0,
+            "<IIHHIIIIIII",
+            body,
+            0x00,
+            0,
+            0,
+            0,
+            0,
             dll_name_rva,
-            5,         # ordinal base
-            2,         # num funcs
-            0,         # num names
+            5,  # ordinal base
+            2,  # num funcs
+            0,  # num names
             funcs_rva,
-            0,         # names_rva (unused)
-            0,         # ords_rva (unused)
+            0,  # names_rva (unused)
+            0,  # ords_rva (unused)
         )
         # Two function RVAs.
         struct.pack_into("<II", body, 0x28, 0x1000, 0x1100)
@@ -372,8 +415,9 @@ class PEOrdinalExportTest(unittest.TestCase):
         self.assertEqual(pe.export_dll_name, "OrdLib.dll")
         self.assertEqual(len(pe.exports), 2)
         # Ordinal base 5 + function index 0/1 = ordinals 5/6.
-        self.assertEqual([(e.name, e.ordinal) for e in pe.exports],
-                         [(None, 5), (None, 6)])
+        self.assertEqual(
+            [(e.name, e.ordinal) for e in pe.exports], [(None, 5), (None, 6)]
+        )
 
 
 class PEForwardedExportTest(unittest.TestCase):
@@ -402,11 +446,20 @@ class PEForwardedExportTest(unittest.TestCase):
 
         body = bytearray(0x80)
         struct.pack_into(
-            "<IIHHIIIIIII", body, 0x00,
-            0, 0, 0, 0,
+            "<IIHHIIIIIII",
+            body,
+            0x00,
+            0,
+            0,
+            0,
+            0,
             dll_name_rva,
-            1, 1, 1,
-            funcs_rva, names_rva, ords_rva,
+            1,
+            1,
+            1,
+            funcs_rva,
+            names_rva,
+            ords_rva,
         )
         struct.pack_into("<I", body, 0x28, forwarder_rva)
         struct.pack_into("<I", body, 0x2C, export_name_rva)
@@ -466,8 +519,14 @@ class PEImportsTest(unittest.TestCase):
 
         body = bytearray(0x60)
         struct.pack_into(
-            "<IIIII", body, 0x00,
-            ilt_rva, 0, 0, dll_name_rva, iat_rva,
+            "<IIIII",
+            body,
+            0x00,
+            ilt_rva,
+            0,
+            0,
+            dll_name_rva,
+            iat_rva,
         )
         # Descriptor terminator already zeroed.
         struct.pack_into("<I", body, 0x28, ibn_rva)
@@ -519,18 +578,21 @@ class PEDebugTest(unittest.TestCase):
         # NB10 layout: 'NB10' + offset(4) + signature(4) + age(4) + name
         cv_record = (
             b"NB10"
-            + struct.pack("<I", 0)        # CodeView offset (always 0)
+            + struct.pack("<I", 0)  # CodeView offset (always 0)
             + struct.pack("<I", 0x3FFD22BC)  # signature (matches Europa1400)
-            + struct.pack("<I", 2)         # age
+            + struct.pack("<I", 2)  # age
             + b"legacy.pdb\x00"
         )
         entry = struct.pack(
             "<IIHHIIII",
-            0, 0, 0, 0,
-            2,                                # IMAGE_DEBUG_TYPE_CODEVIEW
+            0,
+            0,
+            0,
+            0,
+            2,  # IMAGE_DEBUG_TYPE_CODEVIEW
             len(cv_record),
-            rdata_rva + 28,                   # AddressOfRawData
-            rdata_rptr + 28,                  # PointerToRawData
+            rdata_rva + 28,  # AddressOfRawData
+            rdata_rptr + 28,  # PointerToRawData
         )
         body = bytearray(0x100)
         body[0:28] = entry
@@ -558,7 +620,12 @@ class PEDebugTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, 28),
             ],
         )
@@ -577,22 +644,23 @@ class PEDebugTest(unittest.TestCase):
         # GUID: 11223344-5566-7788-99AA-BBCCDDEEFF00 in mixed endianness
         cv_record = (
             b"RSDS"
-            + bytes.fromhex("44332211")            # uint32 LE
-            + bytes.fromhex("6655")                # uint16 LE
-            + bytes.fromhex("8877")                # uint16 LE
-            + bytes.fromhex("99AABBCCDDEEFF00")    # 8 raw bytes
-            + struct.pack("<I", 7)                  # age
+            + bytes.fromhex("44332211")  # uint32 LE
+            + bytes.fromhex("6655")  # uint16 LE
+            + bytes.fromhex("8877")  # uint16 LE
+            + bytes.fromhex("99AABBCCDDEEFF00")  # 8 raw bytes
+            + struct.pack("<I", 7)  # age
             + b"my.pdb\x00"
         )
         entry = struct.pack(
             "<IIHHIIII",
-            0,                                # characteristics
-            0,                                # timestamp
-            0, 0,                             # major/minor version
-            2,                                # IMAGE_DEBUG_TYPE_CODEVIEW
-            len(cv_record),                   # SizeOfData
-            cv_rva,                           # AddressOfRawData
-            rdata_rptr + 28,                  # PointerToRawData
+            0,  # characteristics
+            0,  # timestamp
+            0,
+            0,  # major/minor version
+            2,  # IMAGE_DEBUG_TYPE_CODEVIEW
+            len(cv_record),  # SizeOfData
+            cv_rva,  # AddressOfRawData
+            rdata_rptr + 28,  # PointerToRawData
         )
         body = bytearray(0x100)
         body[0:28] = entry
@@ -621,7 +689,12 @@ class PEDebugTest(unittest.TestCase):
             ],
             # Debug dir is index 6.
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (debug_dir_rva, 28),
             ],
         )
@@ -675,8 +748,15 @@ class PETlsTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, 0x28),
             ],
         )
@@ -694,14 +774,14 @@ class PETlsTest(unittest.TestCase):
         cb_va_b = IMAGE_BASE + 0x1004
         tls_dir = struct.pack(
             "<IIIIIIII",
-            0,                # StartAddressOfRawData
-            0,                # EndAddressOfRawData
-            0,                # AddressOfIndex
-            callbacks_va,     # AddressOfCallBacks
-            0,                # SizeOfZeroFill
-            0,                # Characteristics
-            0,                # padding
-            0,                # padding
+            0,  # StartAddressOfRawData
+            0,  # EndAddressOfRawData
+            0,  # AddressOfIndex
+            callbacks_va,  # AddressOfCallBacks
+            0,  # SizeOfZeroFill
+            0,  # Characteristics
+            0,  # padding
+            0,  # padding
         )
         body = bytearray(0x100)
         body[0 : len(tls_dir)] = tls_dir
@@ -731,8 +811,15 @@ class PETlsTest(unittest.TestCase):
             ],
             # TLS dir is index 9.
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, len(tls_dir)),
             ],
         )
@@ -766,7 +853,7 @@ class PEResourcesTest(unittest.TestCase):
         struct.pack_into("<H", body, 0x080, len(name))
         body[0x082 : 0x082 + len(utf16)] = utf16
         # Leaf bytes
-        body[0x100 : 0x104] = b"DATA"
+        body[0x100:0x104] = b"DATA"
 
         pe_bytes = _build_pe(
             sections=[
@@ -811,11 +898,15 @@ class PEResourcesTest(unittest.TestCase):
         body = bytearray(0x110)
         # Root (type) dir
         struct.pack_into("<IIHHHH", body, 0x000, 0, 0, 0, 0, 0, 1)  # 1 id entry
-        struct.pack_into("<II", body, 0x010, 16, 0x80000000 | 0x018)  # type=16, subdir at 0x018
+        struct.pack_into(
+            "<II", body, 0x010, 16, 0x80000000 | 0x018
+        )  # type=16, subdir at 0x018
 
         # Name dir
         struct.pack_into("<IIHHHH", body, 0x018, 0, 0, 0, 0, 0, 1)
-        struct.pack_into("<II", body, 0x028, 1, 0x80000000 | 0x030)  # name=1, subdir at 0x030
+        struct.pack_into(
+            "<II", body, 0x028, 1, 0x80000000 | 0x030
+        )  # name=1, subdir at 0x030
 
         # Lang dir
         struct.pack_into("<IIHHHH", body, 0x030, 0, 0, 0, 0, 0, 1)
@@ -823,7 +914,7 @@ class PEResourcesTest(unittest.TestCase):
 
         # Leaf
         struct.pack_into("<IIII", body, 0x048, rsrc_rva + 0x100, 8, 0, 0)
-        body[0x100 : 0x108] = b"\x01\x02\x03\x04\x05\x06\x07\x08"
+        body[0x100:0x108] = b"\x01\x02\x03\x04\x05\x06\x07\x08"
 
         pe_bytes = _build_pe(
             sections=[
@@ -867,7 +958,7 @@ class PELoadConfigTest(unittest.TestCase):
         rdata_rptr = FILE_ALIGN * 2
 
         body = bytearray(0x80)
-        struct.pack_into("<I", body, 0, 0x48)            # Size
+        struct.pack_into("<I", body, 0, 0x48)  # Size
         struct.pack_into("<I", body, 0x3C, IMAGE_BASE + rdata_rva + 0x60)  # cookie
         # 0x40 + 0x44 stay zero: no SafeSEH
 
@@ -893,8 +984,16 @@ class PELoadConfigTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, 0x48),
             ],
         )
@@ -914,7 +1013,9 @@ class PELoadConfigTest(unittest.TestCase):
         lc_size = 0x48
         body = bytearray(0x100)
         struct.pack_into("<I", body, 0, lc_size)  # Size
-        struct.pack_into("<I", body, 0x3C, IMAGE_BASE + rdata_rva + 0x60)  # SecurityCookie
+        struct.pack_into(
+            "<I", body, 0x3C, IMAGE_BASE + rdata_rva + 0x60
+        )  # SecurityCookie
         struct.pack_into("<I", body, 0x40, seh_table_va)  # SEHandlerTable
         struct.pack_into("<I", body, 0x44, 2)  # SEHandlerCount
         # SEH handler RVAs
@@ -942,8 +1043,16 @@ class PELoadConfigTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, lc_size),
             ],
         )
@@ -986,8 +1095,16 @@ class PECfgTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, 0x60),
             ],
         )
@@ -1039,8 +1156,16 @@ class PECfgTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, 0x60),
             ],
         )
@@ -1089,8 +1214,16 @@ class PECfgTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, 0x98),
             ],
         )
@@ -1136,8 +1269,16 @@ class PECfgTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, 0x60),
             ],
         )
@@ -1175,7 +1316,10 @@ class PEExceptionTableTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (rdata_rva, len(body)),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (rdata_rva, len(body)),
             ],
         )
         pe = win32_platform.parse_pe(pe_bytes)
@@ -1226,8 +1370,17 @@ class PEBoundImportsTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, bi_size + 33),
             ],
         )
@@ -1274,8 +1427,17 @@ class PEBoundImportsTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (rdata_rva, bi_size + 16),
             ],
         )
@@ -1290,7 +1452,9 @@ class PEVersionInfoTest(unittest.TestCase):
     """Build a synthetic VS_VERSIONINFO with one StringTable / one String
     pair and assert it decodes to the expected key/value."""
 
-    def _vs_node(self, key: str, value: bytes, w_type: int, children: bytes = b"") -> bytes:
+    def _vs_node(
+        self, key: str, value: bytes, w_type: int, children: bytes = b""
+    ) -> bytes:
         key_utf16 = key.encode("utf-16-le") + b"\x00\x00"
         header_size = 6
         body_off = header_size + len(key_utf16)
@@ -1405,8 +1569,10 @@ class PEDelayImportsTest(unittest.TestCase):
 
         body = bytearray(0x100)
         struct.pack_into(
-            "<IIIIIIII", body, 0x00,
-            0,                # attrs (v1: VA-based)
+            "<IIIIIIII",
+            body,
+            0x00,
+            0,  # attrs (v1: VA-based)
             dll_name_va,
             0,
             iat_va,
@@ -1443,8 +1609,18 @@ class PEDelayImportsTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (0, 0),
                 (rdata_rva, 0x40),
             ],
@@ -1467,8 +1643,17 @@ class PEDelayImportsTest(unittest.TestCase):
 
         body = bytearray(0x100)
         struct.pack_into(
-            "<IIIIIIII", body, 0x00,
-            1, dll_name_rva, 0, iat_rva, int_rva, 0, 0, 0,
+            "<IIIIIIII",
+            body,
+            0x00,
+            1,
+            dll_name_rva,
+            0,
+            iat_rva,
+            int_rva,
+            0,
+            0,
+            0,
         )
         # ILT: one 8-byte entry pointing at IMAGE_IMPORT_BY_NAME, then NUL.
         struct.pack_into("<Q", body, 0x50, ibn_rva)
@@ -1500,8 +1685,18 @@ class PEDelayImportsTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (0, 0),
                 (rdata_rva, 0x40),
             ],
@@ -1530,8 +1725,17 @@ class PEDelayImportsTest(unittest.TestCase):
 
         body = bytearray(0x100)
         struct.pack_into(
-            "<IIIIIIII", body, 0x00,
-            1, dll_name_rva, 0, iat_rva, int_rva, 0, 0, 0xCAFEBABE,
+            "<IIIIIIII",
+            body,
+            0x00,
+            1,
+            dll_name_rva,
+            0,
+            iat_rva,
+            int_rva,
+            0,
+            0,
+            0xCAFEBABE,
         )
         # INT table — one entry (named) + NULL terminator
         struct.pack_into("<I", body, 0x48, ibn_rva)
@@ -1565,8 +1769,18 @@ class PEDelayImportsTest(unittest.TestCase):
             ],
             # Delay-import dir is index 13.
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (0, 0),
                 (rdata_rva, 0x40),
             ],
@@ -1592,8 +1806,14 @@ class PEPlusImportTest(unittest.TestCase):
 
         body = bytearray(0x100)
         struct.pack_into(
-            "<IIIII", body, 0x00,
-            ilt_rva, 0, 0, dll_name_rva, iat_rva,
+            "<IIIII",
+            body,
+            0x00,
+            ilt_rva,
+            0,
+            0,
+            dll_name_rva,
+            iat_rva,
         )
         # ILT: 8-byte entry pointing at IMAGE_IMPORT_BY_NAME, then NUL.
         struct.pack_into("<Q", body, 0x28, ibn_rva)
@@ -1651,8 +1871,14 @@ class PEPlusOrdinalImportTest(unittest.TestCase):
 
         body = bytearray(0x80)
         struct.pack_into(
-            "<IIIII", body, 0x00,
-            ilt_rva, 0, 0, dll_name_rva, iat_rva,
+            "<IIIII",
+            body,
+            0x00,
+            ilt_rva,
+            0,
+            0,
+            dll_name_rva,
+            iat_rva,
         )
         # ILT: 8-byte ordinal-only entry (bit 63 set, low 16 = ordinal 42)
         struct.pack_into("<Q", body, 0x28, (1 << 63) | 42)
@@ -1708,8 +1934,14 @@ class PEImportIatZeroSkipTest(unittest.TestCase):
         # Descriptor with iat_rva = 0 (malformed but encountered in
         # corrupt binaries).
         struct.pack_into(
-            "<IIIII", body, 0x00,
-            ilt_rva, 0, 0, dll_name_rva, 0,
+            "<IIIII",
+            body,
+            0x00,
+            ilt_rva,
+            0,
+            0,
+            dll_name_rva,
+            0,
         )
         struct.pack_into("<I", body, 0x28, 0)  # ILT terminator
         body[0x40 : 0x40 + 11] = b"BadDll.dll\x00"
@@ -1754,8 +1986,14 @@ class PEOrdinalImportTest(unittest.TestCase):
 
         body = bytearray(0x60)
         struct.pack_into(
-            "<IIIII", body, 0x00,
-            ilt_rva, 0, 0, dll_name_rva, iat_rva,
+            "<IIIII",
+            body,
+            0x00,
+            ilt_rva,
+            0,
+            0,
+            dll_name_rva,
+            iat_rva,
         )
         # Ordinal-only entry: high bit set, low 16 bits hold the ordinal.
         struct.pack_into("<I", body, 0x28, 0x80000000 | 17)
@@ -1804,12 +2042,12 @@ class PERelocsTest(unittest.TestCase):
         reloc_rptr = FILE_ALIGN * 3
         block = struct.pack("<II", 0x6000, 20) + struct.pack(
             "<HHHHHH",
-            (1 << 12) | 0x010,    # LOW — skip
-            (2 << 12) | 0x020,    # HIGH — skip
-            (4 << 12) | 0x030,    # HIGHADJ — skip
-            (0 << 12) | 0x040,    # ABSOLUTE padding — skip
-            (3 << 12) | 0x050,    # HIGHLOW — accept
-            0,                     # padding
+            (1 << 12) | 0x010,  # LOW — skip
+            (2 << 12) | 0x020,  # HIGH — skip
+            (4 << 12) | 0x030,  # HIGHADJ — skip
+            (0 << 12) | 0x040,  # ABSOLUTE padding — skip
+            (3 << 12) | 0x050,  # HIGHLOW — accept
+            0,  # padding
         )
 
         pe_bytes = _build_pe(
@@ -1834,7 +2072,11 @@ class PERelocsTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (reloc_rva, len(block)),
             ],
         )
@@ -1850,10 +2092,10 @@ class PERelocsTest(unittest.TestCase):
         reloc_rptr = FILE_ALIGN * 3
         block = struct.pack("<II", 0x5000, 16) + struct.pack(
             "<HHHH",
-            (10 << 12) | 0x008,    # DIR64
-            (10 << 12) | 0x020,    # DIR64
-            (3 << 12) | 0x040,     # HIGHLOW
-            0,                      # padding entry — must be ignored
+            (10 << 12) | 0x008,  # DIR64
+            (10 << 12) | 0x020,  # DIR64
+            (3 << 12) | 0x040,  # HIGHLOW
+            0,  # padding entry — must be ignored
         )
 
         pe_bytes = _build_pe_plus(
@@ -1878,7 +2120,11 @@ class PERelocsTest(unittest.TestCase):
                 },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (reloc_rva, len(block)),
             ],
         )
@@ -1890,18 +2136,14 @@ class PERelocsTest(unittest.TestCase):
         captured, with type-0 padding skipped."""
         reloc_rva = 0x4000
         reloc_rptr = FILE_ALIGN * 3
-        block_a = struct.pack(
-            "<II", 0x3000, 16
-        ) + struct.pack(
+        block_a = struct.pack("<II", 0x3000, 16) + struct.pack(
             "<HHHH",
             (3 << 12) | 0x040,
             (3 << 12) | 0x050,
             (3 << 12) | 0x060,
-            0,                           # padding
+            0,  # padding
         )
-        block_b = struct.pack(
-            "<II", 0x5000, 12
-        ) + struct.pack(
+        block_b = struct.pack("<II", 0x5000, 12) + struct.pack(
             "<HH",
             (3 << 12) | 0x100,
             (3 << 12) | 0x200,
@@ -1943,14 +2185,12 @@ class PERelocsTest(unittest.TestCase):
         reloc_rva = 0x4000
         reloc_rptr = FILE_ALIGN * 3
         block_size = 8 + 2 + 2 + 2 + 2  # header + 4 WORD entries
-        block = struct.pack(
-            "<II", 0x3000, block_size
-        ) + struct.pack(
+        block = struct.pack("<II", 0x3000, block_size) + struct.pack(
             "<HHHH",
             (3 << 12) | 0x010,
             (3 << 12) | 0x020,
-            0,                       # padding entry (skipped)
-            0,                       # padding entry (skipped)
+            0,  # padding entry (skipped)
+            0,  # padding entry (skipped)
         )
         body = block
 
@@ -1998,19 +2238,21 @@ class CreateConfigTailSegmentSortTest(unittest.TestCase):
             b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
         )
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678,
-            symtab_off, 4, 0xE0, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            symtab_off,
+            4,
+            0xE0,
+            0x010F,
         )
         opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
         for i, (rva, size) in enumerate(data_dirs):
             struct.pack_into("<II", opt, 96 + i * 8, rva, size)
         header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec
         header = header.ljust(FILE_ALIGN, b"\x00")
-        buf = (
-            bytearray(header) + body
-            + b"\x00" * symtab_size
-            + b"\x00" * sig_size
-        )
+        buf = bytearray(header) + body + b"\x00" * symtab_size + b"\x00" * sig_size
 
         import os
         import tempfile
@@ -2053,7 +2295,14 @@ class CreateConfigAuthenticodeSegmentTest(unittest.TestCase):
             b".text", 0x10, 0x1000, FILE_ALIGN, FILE_ALIGN, 0x60000020
         )
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, 0xE0, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
         # Patch in the data directories starting at offset 96.
@@ -2096,10 +2345,14 @@ class CreateConfigCoffSymtabSegmentTest(unittest.TestCase):
         # PointerToSymbolTable will sit just after the .text raw bytes.
         symtab_off = FILE_ALIGN * 2
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678,
-            symtab_off,                  # PointerToSymbolTable
-            4,                            # NumberOfSymbols
-            0xE0, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            symtab_off,  # PointerToSymbolTable
+            4,  # NumberOfSymbols
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         sec = _section_header(
@@ -2149,11 +2402,20 @@ class CreateConfigAllForwardersTest(unittest.TestCase):
         fwd_rva = rdata_rva + 0x60
         body = bytearray(0x80)
         struct.pack_into(
-            "<IIHHIIIIIII", body, 0x00,
-            0, 0, 0, 0,
+            "<IIHHIIIIIII",
+            body,
+            0x00,
+            0,
+            0,
+            0,
+            0,
             dll_name_rva,
-            1, 1, 1,
-            funcs_rva, names_rva, ords_rva,
+            1,
+            1,
+            1,
+            funcs_rva,
+            names_rva,
+            ords_rva,
         )
         struct.pack_into("<I", body, 0x28, fwd_rva)  # forwarder RVA
         struct.pack_into("<I", body, 0x2C, name_str_rva)
@@ -2164,12 +2426,24 @@ class CreateConfigAllForwardersTest(unittest.TestCase):
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x20},
-                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x20,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x20,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(rdata_rva, 0x80)],
         )
@@ -2208,7 +2482,14 @@ class RvaToFileOffsetVirtualTailTest(unittest.TestCase):
         text_body = b"\x90" * FILE_ALIGN
         rdata_body = b"\x11" * 0x10
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, 0xE0, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            2,
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         # .text: virtual_size 0x400, raw_size FILE_ALIGN (0x200), raw_ptr 0x200.
@@ -2240,25 +2521,46 @@ class Win32PublicSurfaceTest(unittest.TestCase):
 
         expected = {
             # Dataclasses
-            "PEInfo", "PESection", "PEExport", "PEImport",
-            "PEBoundImport", "PEResource", "COFFSymbol", "UnwindInfo",
+            "PEInfo",
+            "PESection",
+            "PEExport",
+            "PEImport",
+            "PEBoundImport",
+            "PEResource",
+            "COFFSymbol",
+            "UnwindInfo",
             "CLRHeader",
             # Top-level entry points
-            "parse_pe", "init", "info", "raw_image",
+            "parse_pe",
+            "init",
+            "info",
+            "raw_image",
             # Helpers used by segtypes + create_config
-            "sanitize_label", "compute_iat_labels",
-            "compute_export_labels", "ptr_layout",
+            "sanitize_label",
+            "compute_iat_labels",
+            "compute_export_labels",
+            "ptr_layout",
             "resolve_exact_encoding",
             # Machine codes
-            "MACHINE_I386", "MACHINE_AMD64",
-            "MACHINE_ARM32", "MACHINE_ARM64",
+            "MACHINE_I386",
+            "MACHINE_AMD64",
+            "MACHINE_ARM32",
+            "MACHINE_ARM64",
             # Magic values
-            "OPT_MAGIC_PE32", "OPT_MAGIC_PE32_PLUS",
+            "OPT_MAGIC_PE32",
+            "OPT_MAGIC_PE32_PLUS",
             # Data directory indices
-            "DIR_EXPORT", "DIR_IMPORT", "DIR_RESOURCE",
-            "DIR_EXCEPTION", "DIR_CERTIFICATE", "DIR_BASERELOC",
-            "DIR_DEBUG", "DIR_TLS", "DIR_LOAD_CONFIG",
-            "DIR_BOUND_IMPORT", "DIR_DELAY_IMPORT",
+            "DIR_EXPORT",
+            "DIR_IMPORT",
+            "DIR_RESOURCE",
+            "DIR_EXCEPTION",
+            "DIR_CERTIFICATE",
+            "DIR_BASERELOC",
+            "DIR_DEBUG",
+            "DIR_TLS",
+            "DIR_LOAD_CONFIG",
+            "DIR_BOUND_IMPORT",
+            "DIR_DELAY_IMPORT",
         }
         for name in expected:
             self.assertTrue(
@@ -2276,22 +2578,39 @@ class CreateConfigCLRSymbolsTest(unittest.TestCase):
         rdata_rptr = FILE_ALIGN * 2
         cor20 = struct.pack(
             "<IHHIIIIIIII",
-            72, 2, 5,
-            0x2100, 0x400,
+            72,
+            2,
+            5,
+            0x2100,
+            0x400,
             0x00000001,
             0x06000001,
-            0x2500, 0x100,
-            0x4000, 0x80,
+            0x2500,
+            0x100,
+            0x4000,
+            0x80,
         )
         body = bytearray(cor20 + b"\x00" * (FILE_ALIGN - len(cor20)))
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x10},
-                {"name": b".rdata", "vsize": 0x400, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x400,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(0, 0)] * 14 + [(rdata_rva, 72), (0, 0)],
         )
@@ -2329,29 +2648,45 @@ class ParseCLRHeaderTest(unittest.TestCase):
         rdata_rptr = FILE_ALIGN * 2
         cor20 = struct.pack(
             "<IHHIIIIIIII",
-            72,       # cb (always 72)
-            2, 5,     # runtime major/minor (CLR 2.5)
-            0x2100, 0x400,   # metadata RVA/size
-            0x00000001,      # flags (COMIMAGE_FLAGS_ILONLY)
-            0x06000001,      # entry point token (MethodDef 0x1)
-            0, 0,            # resources RVA/size
-            0x4000, 0x80,    # strong name sig RVA/size
+            72,  # cb (always 72)
+            2,
+            5,  # runtime major/minor (CLR 2.5)
+            0x2100,
+            0x400,  # metadata RVA/size
+            0x00000001,  # flags (COMIMAGE_FLAGS_ILONLY)
+            0x06000001,  # entry point token (MethodDef 0x1)
+            0,
+            0,  # resources RVA/size
+            0x4000,
+            0x80,  # strong name sig RVA/size
         )
         body = bytearray(cor20 + b"\x00" * (FILE_ALIGN - len(cor20)))
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x10},
-                {"name": b".rdata", "vsize": 0x400, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x400,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(0, 0)] * 14 + [(rdata_rva, 72), (0, 0)],
         )
         pe = win32_platform.parse_pe(pe_bytes)
-        self.assertIsNotNone(pe.clr_header)
+        assert pe.clr_header is not None
         self.assertEqual(pe.clr_header.cb_size, 72)
         self.assertEqual(pe.clr_header.runtime_major, 2)
         self.assertEqual(pe.clr_header.runtime_minor, 5)
@@ -2415,29 +2750,51 @@ class ParseUnwindInfoTest(unittest.TestCase):
         #   code[1]: offset=1,  op=PUSH_NONVOL(0) info=5 (RBP=reg 5)
         unwind = struct.pack(
             "<BBBB" + "BB" * 2,
-            0x01,        # version 1, flags 0
-            5,           # SizeOfProlog
-            2,           # CountOfUnwindCodes
-            0,           # FrameRegister 0
-            5, 0x32,     # code 0: offset 5, op ALLOC_SMALL (2), info 3
-            1, 0x50,     # code 1: offset 1, op PUSH_NONVOL (0), info 5 (RBP)
+            0x01,  # version 1, flags 0
+            5,  # SizeOfProlog
+            2,  # CountOfUnwindCodes
+            0,  # FrameRegister 0
+            5,
+            0x32,  # code 0: offset 5, op ALLOC_SMALL (2), info 3
+            1,
+            0x50,  # code 1: offset 1, op PUSH_NONVOL (0), info 5 (RBP)
         )
         rdata_body = unwind + b"\x00" * (FILE_ALIGN - len(unwind))
 
         pe_bytes = _build_pe_plus(
             sections=[
-                {"name": b".text", "vsize": 0x100, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": text_body},
-                {"name": b".pdata", "vsize": 0x10, "vaddr": 0x2000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
-                 "chars": 0x40000040, "body": pdata_body},
-                {"name": b".rdata", "vsize": len(unwind), "vaddr": 0x3000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 3,
-                 "chars": 0x40000040, "body": rdata_body},
+                {
+                    "name": b".text",
+                    "vsize": 0x100,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": text_body,
+                },
+                {
+                    "name": b".pdata",
+                    "vsize": 0x10,
+                    "vaddr": 0x2000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN * 2,
+                    "chars": 0x40000040,
+                    "body": pdata_body,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": len(unwind),
+                    "vaddr": 0x3000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN * 3,
+                    "chars": 0x40000040,
+                    "body": rdata_body,
+                },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (0x2000, 12),
             ],
         )
@@ -2465,14 +2822,10 @@ class ParseCoffSymtabTest(unittest.TestCase):
         # populated. Two symbols:
         #   "main"     value=0x401000, section=1, type=0x20, class=2
         #   ".text"    value=0,        section=1, type=0x00, class=3
-        sym_a = (
-            b"main\x00\x00\x00\x00"
-            + struct.pack("<IhHBB", 0x00401000, 1, 0x20, 2, 0)
+        sym_a = b"main\x00\x00\x00\x00" + struct.pack(
+            "<IhHBB", 0x00401000, 1, 0x20, 2, 0
         )
-        sym_b = (
-            b".text\x00\x00\x00"
-            + struct.pack("<IhHBB", 0, 1, 0x00, 3, 0)
-        )
+        sym_b = b".text\x00\x00\x00" + struct.pack("<IhHBB", 0, 1, 0x00, 3, 0)
         symtab = sym_a + sym_b
         # Empty string table = just a 4-byte length field of value 4.
         str_table = struct.pack("<I", 4)
@@ -2480,9 +2833,14 @@ class ParseCoffSymtabTest(unittest.TestCase):
         symtab_off = FILE_ALIGN * 2
 
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678,
-            symtab_off, 2,
-            0xE0, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            symtab_off,
+            2,
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         sec = _section_header(
@@ -2542,19 +2900,23 @@ class EscapeStringTest(unittest.TestCase):
 
     def test_quote_and_backslash_escaped(self):
         from src.splat.segtypes.win32.data import _escape_string
-        self.assertEqual(_escape_string(b'"\\'), r'\"\\')
+
+        self.assertEqual(_escape_string(b'"\\'), r"\"\\")
 
     def test_tab_newline_return_use_short_forms(self):
         from src.splat.segtypes.win32.data import _escape_string
+
         self.assertEqual(_escape_string(b"\t\n\r"), r"\t\n\r")
 
     def test_non_printable_uses_hex_escape(self):
         from src.splat.segtypes.win32.data import _escape_string
+
         # 0x01 (SOH) — out of printable range, fall back to \xNN form.
         self.assertEqual(_escape_string(b"\x01"), r"\x01")
 
     def test_latin1_supplement_uses_hex_escape(self):
         from src.splat.segtypes.win32.data import _escape_string
+
         # 0xFC (ü) — _is_string_byte now accepts it for scanning, but
         # _escape_string still emits it as \xfc so GAS interprets the
         # byte literally instead of relying on locale codepage decoding.
@@ -2562,11 +2924,13 @@ class EscapeStringTest(unittest.TestCase):
 
     def test_decode_wide_round_trips_basic_latin(self):
         from src.splat.segtypes.win32.data import _decode_wide
+
         # UTF-16LE bytes for "AB" → "AB" passthrough.
         self.assertEqual(_decode_wide(b"A\x00B\x00"), "AB")
 
     def test_decode_wide_uses_unicode_escape_for_non_ascii(self):
         from src.splat.segtypes.win32.data import _decode_wide
+
         # Polish 'ł' is U+0142 — outside the 0x20-0x7E printable subset
         # used for the preview, so the comment falls back to \uNNNN
         # form rather than the literal codepoint (keeps the generated
@@ -2602,7 +2966,7 @@ class NarrowStringDetectionTest(unittest.TestCase):
         # 'Müller' in Latin-1: M ü l l e r \0 — middle byte 0xFC is in
         # the Latin-1 Supplement printable range (0xA0-0xFF). The
         # scanner accepts it (symmetric with the wide-string scanner).
-        blob = b"M\xFCller\x00"
+        blob = b"M\xfcller\x00"
         end = _scan_string(blob, 0)
         self.assertEqual(end, 7)
 
@@ -2624,6 +2988,7 @@ class WideStringDetectionTest(unittest.TestCase):
         blob = b"H\x00e\x00l\x00l\x00o\x00\x00\x00"
         end = _scan_wide_string(blob, 0)
         self.assertEqual(end, 12)
+        assert end is not None
         self.assertEqual(_decode_wide(blob[: end - 2]), "Hello")
 
     def test_too_short_rejected(self):
@@ -2656,7 +3021,7 @@ class WideStringDetectionTest(unittest.TestCase):
         # Latin-1 Supplement (U+00A0 .. U+00FF) covers German umlauts,
         # French accents, Spanish ñ — common in localised resources.
         # 'Müller' is M ü l l e r -> 4D 00 FC 00 6C 00 6C 00 65 00 72 00.
-        blob = b"\x4D\x00\xFC\x00\x6C\x00\x6C\x00\x65\x00\x72\x00\x00\x00"
+        blob = b"\x4d\x00\xfc\x00\x6c\x00\x6c\x00\x65\x00\x72\x00\x00\x00"
         end = _scan_wide_string(blob, 0)
         self.assertEqual(end, len(blob))
 
@@ -2669,6 +3034,9 @@ class Win32SegBssTest(unittest.TestCase):
         from src.splat.segtypes.win32.bss import Win32SegBss
 
         obj = Win32SegBss.__new__(Win32SegBss)
+        # Upstream's bss_size rework requires every Segment to have a
+        # bss_size attribute. Provide it for the bypass-init path.
+        obj.bss_size = 0
 
         # 1) Explicit bss_size in yaml wins.
         obj.yaml = {"bss_size": 0x1000}
@@ -2708,22 +3076,17 @@ class ResolveExactEncodingTest(unittest.TestCase):
 
     def test_parent_yaml_used_when_subsegment_silent(self):
         import types
+
         parent = types.SimpleNamespace(yaml={"exact_encoding": True})
-        self.assertTrue(
-            win32_platform.resolve_exact_encoding({}, parent)
-        )
+        self.assertTrue(win32_platform.resolve_exact_encoding({}, parent))
         # Subsegment 'False' beats parent 'True'.
         self.assertFalse(
-            win32_platform.resolve_exact_encoding(
-                {"exact_encoding": False}, parent
-            )
+            win32_platform.resolve_exact_encoding({"exact_encoding": False}, parent)
         )
 
     def test_default_returned_when_neither_speaks_up(self):
         self.assertFalse(win32_platform.resolve_exact_encoding({}, None))
-        self.assertTrue(
-            win32_platform.resolve_exact_encoding({}, None, default=True)
-        )
+        self.assertTrue(win32_platform.resolve_exact_encoding({}, None, default=True))
 
     def test_non_dict_yaml_is_silent(self):
         # If the subsegment YAML is a list (the bare-tuple shorthand
@@ -2738,6 +3101,7 @@ class ResolveExactEncodingTest(unittest.TestCase):
         # a Segment-shaped object whose `.yaml` is a list. Both must
         # fall through to the default cleanly.
         import types
+
         no_yaml = types.SimpleNamespace()
         list_yaml = types.SimpleNamespace(yaml=[])
         self.assertFalse(win32_platform.resolve_exact_encoding({}, no_yaml))
@@ -2757,22 +3121,20 @@ class Win32ExactEncodingInheritanceTest(unittest.TestCase):
             obj = cls.__new__(cls)
             obj.yaml = {}
             obj.parent = None
-            self.assertFalse(obj.exact_encoding)  # class default
+            self.assertFalse(obj.exact_encoding)  # type: ignore[attr-defined]
 
             obj.yaml = {"exact_encoding": True}
-            self.assertTrue(obj.exact_encoding)  # per-subsegment override
+            self.assertTrue(obj.exact_encoding)  # type: ignore[attr-defined]
 
             obj.yaml = {}
             # Use a simple namespace as parent — it just needs a .yaml attr.
             import types
 
-            obj.parent = types.SimpleNamespace(yaml={"exact_encoding": True})
-            self.assertTrue(obj.exact_encoding)  # inherited from parent
+            obj.parent = types.SimpleNamespace(yaml={"exact_encoding": True})  # type: ignore[assignment]
+            self.assertTrue(obj.exact_encoding)  # type: ignore[attr-defined]
 
             obj.yaml = {"exact_encoding": False}
-            self.assertFalse(
-                obj.exact_encoding
-            )  # subsegment value wins over parent
+            self.assertFalse(obj.exact_encoding)  # type: ignore[attr-defined]
 
 
 class CreateConfigRejectionTest(unittest.TestCase):
@@ -2803,37 +3165,56 @@ class CreateConfigExportLabelDedupTest(unittest.TestCase):
         rdata_rva = 0x2000
         rdata_rptr = FILE_ALIGN * 2
         funcs_rva = rdata_rva + 0x28
-        names_rva = funcs_rva + 0x8       # 2 funcs * 4
-        ords_rva = names_rva + 0x8        # 2 names * 4
+        names_rva = funcs_rva + 0x8  # 2 funcs * 4
+        ords_rva = names_rva + 0x8  # 2 names * 4
         # Strings laid out at +0x40, +0x48, +0x50.
         s1_rva = rdata_rva + 0x40
         s2_rva = rdata_rva + 0x48
         dll_name_rva = rdata_rva + 0x50
         body = bytearray(0x80)
         struct.pack_into(
-            "<IIHHIIIIIII", body, 0x00,
-            0, 0, 0, 0,
+            "<IIHHIIIIIII",
+            body,
+            0x00,
+            0,
+            0,
+            0,
+            0,
             dll_name_rva,
-            1,   # ordinal base
-            2,   # num funcs
-            2,   # num names
-            funcs_rva, names_rva, ords_rva,
+            1,  # ordinal base
+            2,  # num funcs
+            2,  # num names
+            funcs_rva,
+            names_rva,
+            ords_rva,
         )
         struct.pack_into("<II", body, 0x28, 0x1000, 0x1010)  # funcs
         struct.pack_into("<II", body, 0x30, s1_rva, s2_rva)  # name ptrs
-        struct.pack_into("<HH", body, 0x38, 0, 1)            # ordinal idxs
+        struct.pack_into("<HH", body, 0x38, 0, 1)  # ordinal idxs
         body[0x40 : 0x40 + 8] = b"foo@bar\x00"
         body[0x48 : 0x48 + 8] = b"foo$bar\x00"
         body[0x50 : 0x50 + 11] = b"clash.dll\x00\x00"
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x20},
-                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x20,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x20,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(rdata_rva, 0x80)],
         )
@@ -2876,11 +3257,20 @@ class CreateConfigEntrypointExportCollisionTest(unittest.TestCase):
         dll_name_rva = rdata_rva + 0x50
         body = bytearray(0x80)
         struct.pack_into(
-            "<IIHHIIIIIII", body, 0x00,
-            0, 0, 0, 0,
+            "<IIHHIIIIIII",
+            body,
+            0x00,
+            0,
+            0,
+            0,
+            0,
             dll_name_rva,
-            1, 1, 1,
-            funcs_rva, names_rva, ords_rva,
+            1,
+            1,
+            1,
+            funcs_rva,
+            names_rva,
+            ords_rva,
         )
         struct.pack_into("<I", body, 0x28, 0x1010)
         struct.pack_into("<I", body, 0x2C, name_str_rva)
@@ -2890,12 +3280,24 @@ class CreateConfigEntrypointExportCollisionTest(unittest.TestCase):
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x20},
-                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x20,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x20,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(rdata_rva, 0x80)],
         )
@@ -2919,7 +3321,8 @@ class CreateConfigEntrypointExportCollisionTest(unittest.TestCase):
             self.assertIn("entrypoint__ord1", txt)
             # No duplicate bare "entrypoint =" lines.
             label_count = sum(
-                1 for line in txt.splitlines()
+                1
+                for line in txt.splitlines()
                 if line.lstrip().startswith("entrypoint =")
             )
             self.assertEqual(label_count, 1)
@@ -2938,14 +3341,26 @@ class CreateConfigZeroSizeBssTest(unittest.TestCase):
         text_body = b"\x90" * FILE_ALIGN
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": text_body},
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": text_body,
+                },
                 # raw_size=0, virtual_size=0, characteristics has
                 # SCN_CNT_UNINITIALIZED_DATA (0x00000080).
-                {"name": b".bss", "vsize": 0, "vaddr": 0x2000,
-                 "rsize": 0, "rptr": 0,
-                 "chars": 0xC0000080, "body": b""},
+                {
+                    "name": b".bss",
+                    "vsize": 0,
+                    "vaddr": 0x2000,
+                    "rsize": 0,
+                    "rptr": 0,
+                    "chars": 0xC0000080,
+                    "body": b"",
+                },
             ],
         )
 
@@ -2980,12 +3395,24 @@ class CreateConfigSectionNameDedupTest(unittest.TestCase):
         sec_body = b"\x90" * FILE_ALIGN
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": sec_body},
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x2000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
-                 "chars": 0x60000020, "body": sec_body},
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": sec_body,
+                },
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x2000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN * 2,
+                    "chars": 0x60000020,
+                    "body": sec_body,
+                },
             ],
         )
 
@@ -3026,11 +3453,20 @@ class CreateConfigLeadingDigitSanitizeTest(unittest.TestCase):
         dll_name_rva = rdata_rva + 0x50
         body = bytearray(0x80)
         struct.pack_into(
-            "<IIHHIIIIIII", body, 0x00,
-            0, 0, 0, 0,
+            "<IIHHIIIIIII",
+            body,
+            0x00,
+            0,
+            0,
+            0,
+            0,
             dll_name_rva,
-            1, 1, 1,
-            funcs_rva, names_rva, ords_rva,
+            1,
+            1,
+            1,
+            funcs_rva,
+            names_rva,
+            ords_rva,
         )
         struct.pack_into("<I", body, 0x28, 0x1000)
         struct.pack_into("<I", body, 0x2C, name_str_rva)
@@ -3040,12 +3476,24 @@ class CreateConfigLeadingDigitSanitizeTest(unittest.TestCase):
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x20},
-                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x20,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x20,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(rdata_rva, 0x80)],
         )
@@ -3106,12 +3554,24 @@ class CreateConfigImportDllSanitizeTest(unittest.TestCase):
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x20},
-                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x20,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x20,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(0, 0), (rdata_rva, 0x100)],
         )
@@ -3166,8 +3626,14 @@ class CreateConfigImportLabelDedupTest(unittest.TestCase):
 
         # Descriptor 1: kernel32.dll with our two imports.
         struct.pack_into(
-            "<IIIII", body, 0x00,
-            ilt_rva, 0, 0, dll_rva, iat_rva,
+            "<IIIII",
+            body,
+            0x00,
+            ilt_rva,
+            0,
+            0,
+            dll_rva,
+            iat_rva,
         )
         # NULL terminator descriptor.
         struct.pack_into("<IIIII", body, 0x14, 0, 0, 0, 0, 0)
@@ -3186,12 +3652,24 @@ class CreateConfigImportLabelDedupTest(unittest.TestCase):
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x20},
-                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x20,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x20,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(0, 0), (rdata_rva, 0x100)],
         )
@@ -3236,7 +3714,13 @@ class CreateConfigEntrypointOmissionTest(unittest.TestCase):
         body = b"\x00" * 0x10
         size_of_opt = 0xE0
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, size_of_opt,
+            "<HHIIIHH",
+            0x014C,
+            2,
+            0x12345678,
+            0,
+            0,
+            size_of_opt,
             0x010F | 0x2000,  # IMAGE_FILE_DLL
         )
         opt = bytearray(_opt_header_pe32(entry_rva=0))
@@ -3248,9 +3732,7 @@ class CreateConfigEntrypointOmissionTest(unittest.TestCase):
         )
         header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec1 + sec2
         header = header.ljust(FILE_ALIGN, b"\x00")
-        buf = bytearray(header) + b"\x90" * FILE_ALIGN + body.ljust(
-            FILE_ALIGN, b"\x00"
-        )
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN + body.ljust(FILE_ALIGN, b"\x00")
         tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-noentry-"))
         cwd = os.getcwd()
         os.chdir(tmpdir)
@@ -3261,7 +3743,8 @@ class CreateConfigEntrypointOmissionTest(unittest.TestCase):
             sym_path = tmpdir / "symbol_addrs.txt"
             self.assertTrue(sym_path.exists(), "symbols file should be written")
             self.assertNotIn(
-                "entrypoint =", sym_path.read_text(),
+                "entrypoint =",
+                sym_path.read_text(),
                 "entrypoint must be omitted when AddressOfEntryPoint = 0",
             )
         finally:
@@ -3287,9 +3770,7 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         self.assertEqual(win32_platform.sanitize_label("CreateThread"), "CreateThread")
 
     def test_sanitize_label_replaces_punctuation(self):
-        self.assertEqual(
-            win32_platform.sanitize_label("foo@bar-baz?"), "foo_bar_baz_"
-        )
+        self.assertEqual(win32_platform.sanitize_label("foo@bar-baz?"), "foo_bar_baz_")
 
     def test_sanitize_label_prefixes_leading_digit(self):
         self.assertEqual(win32_platform.sanitize_label("7zopen"), "_7zopen")
@@ -3317,9 +3798,7 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
         labels = win32_platform.compute_iat_labels(pe)
         # Two distinct VAs, two distinct labels — first bare, second suffixed.
         self.assertEqual(labels[0x400000 + 0x2000], "imp_user32_dll_foo_x")
-        self.assertEqual(
-            labels[0x400000 + 0x2004], "imp_user32_dll_foo_x__rva2004"
-        )
+        self.assertEqual(labels[0x400000 + 0x2004], "imp_user32_dll_foo_x__rva2004")
 
     def test_compute_export_labels_reserves_seed_set(self):
         """An export literally named 'entrypoint' must NOT clobber the
@@ -3330,16 +3809,16 @@ class Win32SanitizeLabelHelpersTest(unittest.TestCase):
                 name="entrypoint", ordinal=7, rva=0x1234, forwarder=None
             )
         )
-        labels = win32_platform.compute_export_labels(
-            pe, reserved={"entrypoint"}
-        )
+        labels = win32_platform.compute_export_labels(pe, reserved={"entrypoint"})
         self.assertEqual(labels[0x10000000 + 0x1234], "entrypoint__ord7")
 
     def test_compute_export_labels_skips_forwarders(self):
         pe = win32_platform.PEInfo(image_base=0x10000000)
         pe.exports.append(
             win32_platform.PEExport(
-                name="GoesElsewhere", ordinal=1, rva=0x100,
+                name="GoesElsewhere",
+                ordinal=1,
+                rva=0x100,
                 forwarder="OTHER.dll.DoThing",
             )
         )
@@ -3373,12 +3852,24 @@ class ParseImportsHintFallbackTest(unittest.TestCase):
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x20},
-                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x20,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x20,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(0, 0), (rdata_rva, 0x100)],
         )
@@ -3403,12 +3894,24 @@ class CreateConfigSecurityCookieTest(unittest.TestCase):
         struct.pack_into("<I", body, 0x3C, IMAGE_BASE + rdata_rva + 0x50)
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x10},
-                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(0, 0)] * 10 + [(rdata_rva, lc_size)],
         )
@@ -3444,23 +3947,43 @@ class CreateConfigUnwindSymbolsTest(unittest.TestCase):
         # .pdata layout (PE32+): 12 bytes per record + 12-byte null terminator
         pdata_body = struct.pack(
             "<IIIIIIIII",
-            0x1000, 0x100D, 0x4000,
-            0x1100, 0x110D, 0x4020,
-            0, 0, 0,
+            0x1000,
+            0x100D,
+            0x4000,
+            0x1100,
+            0x110D,
+            0x4020,
+            0,
+            0,
+            0,
         )
         pdata_body = pdata_body.ljust(FILE_ALIGN, b"\x00")
 
         pe_bytes = _build_pe_plus(
             sections=[
-                {"name": b".text", "vsize": 0x200, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": text_body},
-                {"name": b".pdata", "vsize": 0x100, "vaddr": 0x3000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
-                 "chars": 0x40000040, "body": pdata_body},
+                {
+                    "name": b".text",
+                    "vsize": 0x200,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": text_body,
+                },
+                {
+                    "name": b".pdata",
+                    "vsize": 0x100,
+                    "vaddr": 0x3000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN * 2,
+                    "chars": 0x40000040,
+                    "body": pdata_body,
+                },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (0x3000, 24),  # Exception Table → .pdata
             ],
         )
@@ -3507,12 +4030,24 @@ class CreateConfigMingwClangDetectionTest(unittest.TestCase):
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x20, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x20},
-                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x20,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x20,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(0, 0), (rdata_rva, 0x100)],
         )
@@ -3552,18 +4087,30 @@ class CreateConfigCfgSymbolsTest(unittest.TestCase):
         body = bytearray(0x100)
         struct.pack_into("<I", body, 0, lc_size)
         struct.pack_into("<I", body, 0x54, cfg_table_va)  # GuardCFFunctionTable
-        struct.pack_into("<I", body, 0x58, 3)              # GuardCFFunctionCount
-        struct.pack_into("<I", body, 0x5C, 0)              # GuardFlags = 0 (no extra bytes)
+        struct.pack_into("<I", body, 0x58, 3)  # GuardCFFunctionCount
+        struct.pack_into("<I", body, 0x5C, 0)  # GuardFlags = 0 (no extra bytes)
         struct.pack_into("<III", body, cfg_table_off, 0x1000, 0x1010, 0x1020)
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x100, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x100},
-                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x100,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x100,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(0, 0)] * 10 + [(rdata_rva, lc_size)],
         )
@@ -3608,16 +4155,19 @@ class CreateConfigReadOnlyTailBssTest(unittest.TestCase):
             b".rdata", 0x400, 0x2000, FILE_ALIGN, FILE_ALIGN * 2, 0x40000040
         )
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, 0xE0, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            2,
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec_text + sec_rdata
         header = header.ljust(FILE_ALIGN, b"\x00")
-        buf = (
-            bytearray(header)
-            + text_body
-            + rdata_body.ljust(FILE_ALIGN, b"\x00")
-        )
+        buf = bytearray(header) + text_body + rdata_body.ljust(FILE_ALIGN, b"\x00")
 
         import os
         import tempfile
@@ -3665,15 +4215,24 @@ class CreateConfigTlsAndSafeSehSymbolsTest(unittest.TestCase):
         body = bytearray(0x100)
         # TLS dir.
         struct.pack_into(
-            "<IIIIII", body, 0,
-            0, 0, 0,                                  # raw start/end/index VAs
-            IMAGE_BASE + cb_array_rva,                # AddressOfCallBacks
-            0, 0,
+            "<IIIIII",
+            body,
+            0,
+            0,
+            0,
+            0,  # raw start/end/index VAs
+            IMAGE_BASE + cb_array_rva,  # AddressOfCallBacks
+            0,
+            0,
         )
         # Callback array: two VAs then NUL.
         struct.pack_into(
-            "<III", body, 0x18,
-            IMAGE_BASE + 0x1010, IMAGE_BASE + 0x1020, 0,
+            "<III",
+            body,
+            0x18,
+            IMAGE_BASE + 0x1010,
+            IMAGE_BASE + 0x1020,
+            0,
         )
         # LoadConfig (size 0x48).
         struct.pack_into("<I", body, lc_off + 0x00, 0x48)
@@ -3685,16 +4244,35 @@ class CreateConfigTlsAndSafeSehSymbolsTest(unittest.TestCase):
 
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x100, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x100},
-                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x100,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x100,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[
-                (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0),
-                (0, 0), (0, 0), (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (tls_dir_rva, 0x18),
                 (lc_rva, 0x48),
             ],
@@ -3733,15 +4311,24 @@ class CreateConfigNoFileBackedSectionsTest(unittest.TestCase):
         sec_bss = struct.pack(
             "<8sIIIIIIHHI",
             b".bss\x00\x00\x00\x00",
-            0x100,    # VirtualSize
-            0x1000,   # VirtualAddress
-            0,        # SizeOfRawData
-            0,        # PointerToRawData
-            0, 0, 0, 0,
+            0x100,  # VirtualSize
+            0x1000,  # VirtualAddress
+            0,  # SizeOfRawData
+            0,  # PointerToRawData
+            0,
+            0,
+            0,
+            0,
             0xC0000080,  # READ | WRITE | UNINITIALIZED_DATA
         )
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, 0xE0,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            0xE0,
             0x010F | 0x2000,  # IMAGE_FILE_DLL
         )
         opt = _opt_header_pe32(entry_rva=0)
@@ -3766,12 +4353,12 @@ class CreateConfigNoFileBackedSectionsTest(unittest.TestCase):
             doc = yaml.safe_load((tmpdir / "bssonly.dll.yaml").read_text())
             # Should have a header segment and the BSS segment.
             segs = doc["segments"]
-            self.assertTrue(any(
-                isinstance(s, dict) and s.get("type") == "header" for s in segs
-            ))
-            self.assertTrue(any(
-                isinstance(s, dict) and s.get("type") == "bss" for s in segs
-            ))
+            self.assertTrue(
+                any(isinstance(s, dict) and s.get("type") == "header" for s in segs)
+            )
+            self.assertTrue(
+                any(isinstance(s, dict) and s.get("type") == "bss" for s in segs)
+            )
         finally:
             os.chdir(cwd)
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -3793,20 +4380,28 @@ class CreateConfigPhantomSectionTest(unittest.TestCase):
         sec_bss = struct.pack(
             "<8sIIIIIIHHI",
             b".bss\x00\x00\x00\x00",
-            0x80,    # VirtualSize
+            0x80,  # VirtualSize
             0x2000,  # VirtualAddress
-            0x40,    # SizeOfRawData (nonzero!)
-            0,       # PointerToRawData (zero — phantom)
-            0, 0, 0, 0,
+            0x40,  # SizeOfRawData (nonzero!)
+            0,  # PointerToRawData (zero — phantom)
+            0,
+            0,
+            0,
+            0,
             0xC0000040,  # READ | WRITE | INITIALIZED_DATA (no UNINIT flag)
         )
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, 0xE0, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            2,
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
-        header = (
-            DOS_STUB + b"PE\x00\x00" + coff + opt + sec_text + sec_bss
-        )
+        header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec_text + sec_bss
         header = header.ljust(FILE_ALIGN, b"\x00")
         buf = bytearray(header) + text_body
 
@@ -3825,7 +4420,7 @@ class CreateConfigPhantomSectionTest(unittest.TestCase):
             create_win32_config(exe, bytes(buf))
             yaml_txt = (tmpdir / "phantom.exe.yaml").read_text()
             # The phantom .bss should NOT be emitted as a file-backed
-            # type:code subsegment (which would point at offset 0).
+            # `type: code` subsegment (which would point at offset 0).
             self.assertNotIn("[0x0, ", yaml_txt)
             # It SHOULD appear as a bss segment.
             self.assertIn("name: bss,", yaml_txt)
@@ -3844,7 +4439,13 @@ class CreateConfigResourceOnlyDllTest(unittest.TestCase):
         body = b"\x90" * FILE_ALIGN
         # PE32 DLL: no exports/imports/relocs/etc., one .rsrc section.
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, 0xE0,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            0xE0,
             0x010F | 0x2000,  # IMAGE_FILE_DLL
         )
         opt = bytearray(_opt_header_pe32(entry_rva=0))
@@ -3853,9 +4454,7 @@ class CreateConfigResourceOnlyDllTest(unittest.TestCase):
         )
         header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec_rsrc
         header = header.ljust(FILE_ALIGN, b"\x00")
-        buf = bytearray(header) + body[: len(rsrc_body)].ljust(
-            FILE_ALIGN, b"\x00"
-        )
+        buf = bytearray(header) + body[: len(rsrc_body)].ljust(FILE_ALIGN, b"\x00")
 
         import os
         import tempfile
@@ -3877,7 +4476,8 @@ class CreateConfigResourceOnlyDllTest(unittest.TestCase):
             # symbol_addrs has the splat preamble comment but no actual
             # symbol bindings (no `name = 0x... ;` lines).
             content_lines = [
-                ln for ln in sym.splitlines()
+                ln
+                for ln in sym.splitlines()
                 if ln.strip() and not ln.lstrip().startswith("//")
             ]
             self.assertEqual(content_lines, [])
@@ -3899,15 +4499,33 @@ class CreateConfigBinClassificationTest(unittest.TestCase):
         body = b"\x90" * FILE_ALIGN
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": body},
-                {"name": b".rsrc", "vsize": 0x10, "vaddr": 0x2000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
-                 "chars": 0x40000040, "body": body},
-                {"name": b".reloc", "vsize": 0x10, "vaddr": 0x3000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 3,
-                 "chars": 0x42000040, "body": body},
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": body,
+                },
+                {
+                    "name": b".rsrc",
+                    "vsize": 0x10,
+                    "vaddr": 0x2000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN * 2,
+                    "chars": 0x40000040,
+                    "body": body,
+                },
+                {
+                    "name": b".reloc",
+                    "vsize": 0x10,
+                    "vaddr": 0x3000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN * 3,
+                    "chars": 0x42000040,
+                    "body": body,
+                },
             ],
         )
 
@@ -3941,12 +4559,24 @@ class CreateConfigPdataDetectTest(unittest.TestCase):
         body = b"\x90" * FILE_ALIGN
         pe_bytes = _build_pe_plus(
             sections=[
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": body},
-                {"name": b".pdata", "vsize": 0x10, "vaddr": 0x2000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
-                 "chars": 0x40000040, "body": body},
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": body,
+                },
+                {
+                    "name": b".pdata",
+                    "vsize": 0x10,
+                    "vaddr": 0x2000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN * 2,
+                    "chars": 0x40000040,
+                    "body": body,
+                },
             ],
         )
 
@@ -3977,12 +4607,24 @@ class CreateConfigPdataDetectTest(unittest.TestCase):
         body = b"\x00" * FILE_ALIGN
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * FILE_ALIGN},
-                {"name": b".pdata", "vsize": 0x10, "vaddr": 0x2000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN * 2,
-                 "chars": 0x40000040, "body": body},
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * FILE_ALIGN,
+                },
+                {
+                    "name": b".pdata",
+                    "vsize": 0x10,
+                    "vaddr": 0x2000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN * 2,
+                    "chars": 0x40000040,
+                    "body": body,
+                },
             ],
         )
 
@@ -4013,10 +4655,16 @@ class CreateConfigMsvcAutoDetectTest(unittest.TestCase):
         MSVC linker produced the binary. The generated YAML's `compiler:`
         line should reflect that so consumers don't have to override."""
         # Force linker_major = 14 (MSVC14, VS 2015-2022).
-        body = b"\x00" * 0x10
         size_of_opt = 0xE0
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            size_of_opt,
+            0x010F,
         )
         opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
         # MajorLinkerVersion at offset 2, MinorLinkerVersion at 3.
@@ -4051,10 +4699,16 @@ class CreateConfigMsvcAutoDetectTest(unittest.TestCase):
         """A binary whose linker version isn't in the lookup table (e.g.
         a custom packer's value) should still produce a valid splat
         config — default to MSVC6 since it's the lowest registered."""
-        body = b"\x00" * 0x10
         size_of_opt = 0xE0
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            size_of_opt,
+            0x010F,
         )
         opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
         struct.pack_into("<BB", opt, 2, 99, 0)
@@ -4091,10 +4745,16 @@ class CreateConfigPathologicalBasenameTest(unittest.TestCase):
         remove_invalid_path_characters strips would otherwise produce a
         bare '.yaml' / '.ld' output. Fall back to a synthetic basename."""
         # Build a minimal PE.
-        body = b"\x00" * 0x10
         size_of_opt = 0xE0
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            size_of_opt,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         sec = _section_header(
@@ -4108,9 +4768,6 @@ class CreateConfigPathologicalBasenameTest(unittest.TestCase):
         import tempfile
         import shutil
         from src.splat.scripts.create_config import create_win32_config
-        from src.splat.scripts.create_config import (
-            remove_invalid_path_characters,
-        )
         from pathlib import Path as _P
 
         tmpdir = _P(tempfile.mkdtemp(prefix="splat-create-empty-"))
@@ -4140,7 +4797,14 @@ class CreateConfigYamlQuotedPathTest(unittest.TestCase):
         body = b"\x00" * 0x10
         size_of_opt = 0xE0
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 2, 0x12345678, 0, 0, size_of_opt, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            2,
+            0x12345678,
+            0,
+            0,
+            size_of_opt,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         sec1 = _section_header(
@@ -4151,9 +4815,7 @@ class CreateConfigYamlQuotedPathTest(unittest.TestCase):
         )
         header = DOS_STUB + b"PE\x00\x00" + coff + opt + sec1 + sec2
         header = header.ljust(FILE_ALIGN, b"\x00")
-        buf = bytearray(header) + b"\x90" * FILE_ALIGN + body.ljust(
-            FILE_ALIGN, b"\x00"
-        )
+        buf = bytearray(header) + b"\x90" * FILE_ALIGN + body.ljust(FILE_ALIGN, b"\x00")
 
         import os
         import tempfile
@@ -4221,13 +4883,19 @@ class Win32HeaderTruncatedOptionalHeaderTest(unittest.TestCase):
         byte block once — subsequent emit_* calls return silently."""
         from src.splat.segtypes.win32.header import Win32SegHeader
 
-        coff_off = 0x40 + 4
         # Declare a runt optional header — fits Magic + linker bytes +
         # SizeOfCode + SizeOfInitData (16 bytes total), then truncated
         # mid-SizeOfUninitData. The bounds check fires there.
         size_of_opt = 0x10
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            size_of_opt,
+            0x010F,
         )
         opt_runt = bytearray(size_of_opt)
         opt_runt[0:2] = struct.pack("<H", 0x010B)  # Magic = PE32
@@ -4268,10 +4936,16 @@ class Win32HeaderDataDirCountCapTest(unittest.TestCase):
         # Minimal PE32 buffer where SizeOfOptionalHeader covers exactly
         # the standard header + 16 data directories. Force NumberOfRvaAndSizes
         # to 0xFFFFFFFF.
-        coff_off = 0x40 + 4
         size_of_opt = 0xE0
         coff = struct.pack(
-            "<HHIIIHH", 0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+            "<HHIIIHH",
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            size_of_opt,
+            0x010F,
         )
         opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
         # NumberOfRvaAndSizes field at offset 92.
@@ -4427,9 +5101,7 @@ class Win32ResourceTypeNamesTest(unittest.TestCase):
             24: "MANIFEST",
         }
         for rid, name in expected.items():
-            self.assertEqual(
-                RESOURCE_TYPE_NAMES.get(rid), name, f"RT id {rid}"
-            )
+            self.assertEqual(RESOURCE_TYPE_NAMES.get(rid), name, f"RT id {rid}")
 
 
 class Win32LinkerVersionTest(unittest.TestCase):
@@ -4450,7 +5122,9 @@ class Win32SegHeaderUtilsTest(unittest.TestCase):
 
     def test_decode_characteristics_flags(self):
         from src.splat.segtypes.win32.header import (
-            _decode_flags, _FILE_CHARACTERISTICS, _DLL_CHARACTERISTICS,
+            _decode_flags,
+            _FILE_CHARACTERISTICS,
+            _DLL_CHARACTERISTICS,
         )
 
         self.assertEqual(_decode_flags(0, _FILE_CHARACTERISTICS), "(none)")
@@ -4511,10 +5185,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         also hit the win32 init() rejection — generic message rather
         than the ARM-specific one."""
         # Machine = 0x0166 (R3000-LE) → not i386/amd64/arm64/arm32.
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0x0166, 1, 0x12345678, 0, 0, 0xE0, 0x010F,
+            0x0166,
+            1,
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         sec = _section_header(
@@ -4533,10 +5212,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         are architecture-neutral) but init() must reject them with an
         explicit message — the disassembler is x86-only."""
         # Hand-build a tiny PE32+ with Machine = 0xAA64 (ARM64).
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0xAA64, 1, 0x12345678, 0, 0, 0xF0, 0x002F,
+            0xAA64,
+            1,
+            0x12345678,
+            0,
+            0,
+            0xF0,
+            0x002F,
         )
         opt = _opt_header_pe32_plus(entry_rva=0x1000)
         sec = _section_header(
@@ -4556,11 +5240,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         """NumberOfSections * 40 must fit between the end of the optional
         header and EOF. Declaring 10 sections but only providing 2 must
         be caught explicitly."""
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 10,                  # claim 10 sections
-            0x12345678, 0, 0, 0xE0, 0x010F,
+            0x014C,
+            10,  # claim 10 sections
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         # Only enough space for 2 section headers — half of the declared.
@@ -4576,10 +5264,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         at all (technically valid only for COFF object files, not PE
         images). Parser must reject before attempting to read the
         2-byte magic field."""
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 0, 0x12345678, 0, 0, 0, 0x010F,
+            0x014C,
+            0,
+            0x12345678,
+            0,
+            0,
+            0,
+            0x010F,
         )
         header = DOS_STUB + b"PE\x00\x00" + coff
         header = header.ljust(FILE_ALIGN, b"\x00")
@@ -4590,19 +5283,30 @@ class PEEdgeCasesTest(unittest.TestCase):
         """Optional header smaller than the per-format minimum (96 for
         PE32, 112 for PE32+) can't fit the data-directory offsets we
         expect to read. Parser must reject."""
-        coff_off = 0x40 + 4
         # PE32 optional header but declared size 32 (less than the 96
         # required for windows-specific + data-directories).
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 0, 0x12345678, 0, 0, 32, 0x010F,
+            0x014C,
+            0,
+            0x12345678,
+            0,
+            0,
+            32,
+            0x010F,
         )
         # First 32 bytes of a PE32 optional header (just standard fields).
         opt = struct.pack(
             "<HBBIIIIIII",
-            0x010B, 6, 0,
-            0x200, 0x200, 0,
-            0x1000, 0x1000, 0x2000,
+            0x010B,
+            6,
+            0,
+            0x200,
+            0x200,
+            0,
+            0x1000,
+            0x1000,
+            0x2000,
             0x400000,
         )
         assert len(opt) == 32
@@ -4615,10 +5319,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         """Optional header magic must be 0x10B (PE32) or 0x20B (PE32+).
         Older formats like ROM image (0x107) or future values must be
         rejected before we try to read PE32-specific offsets."""
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 1, 0x12345678, 0, 0, 0xE0, 0x010F,
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         # Build a valid-looking PE32 optional header then overwrite the
         # magic to 0x107 (ROM image, unsupported).
@@ -4629,9 +5338,7 @@ class PEEdgeCasesTest(unittest.TestCase):
         )
         header = DOS_STUB + b"PE\x00\x00" + coff + bytes(opt) + sec
         with self.assertRaises(SystemExit):
-            win32_platform.parse_pe(
-                bytes(header).ljust(FILE_ALIGN * 2, b"\x00")
-            )
+            win32_platform.parse_pe(bytes(header).ljust(FILE_ALIGN * 2, b"\x00"))
 
     def test_truncated_after_pe_signature(self):
         """File large enough to hold MZ + e_lfanew + 'PE\\0\\0' but not
@@ -4673,10 +5380,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         (or vice-versa) must be rejected — both fields encode pointer
         size and they must agree."""
         # i386 Machine + PE32+ magic.
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 1, 0x12345678, 0, 0, 0xF0, 0x010F,
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            0xF0,
+            0x010F,
         )
         # PE32+ optional header (240 bytes) but Machine claims i386.
         opt = _opt_header_pe32_plus(entry_rva=0x1000)
@@ -4703,12 +5415,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         + NumberOfSymbols (debug info goes in the external .pdb), but
         when they do, those fields surface on PEInfo for the header
         summary to flag."""
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 1, 0x12345678,
-            0x12345, 42,        # PointerToSymbolTable + NumberOfSymbols
-            0xE0, 0x010F,
+            0x014C,
+            1,
+            0x12345678,
+            0x12345,
+            42,  # PointerToSymbolTable + NumberOfSymbols
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         sec = _section_header(
@@ -4725,10 +5440,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         """Synthetic PE with NumberOfSections=0 — parser should accept
         and downstream rva_to_file_offset should return None for any
         non-trivial RVA without crashing."""
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 0, 0x12345678, 0, 0, 0xE0, 0x010F,
+            0x014C,
+            0,
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0, data_dirs=())
         header = DOS_STUB + b"PE\x00\x00" + coff + opt
@@ -4742,10 +5462,14 @@ class PEEdgeCasesTest(unittest.TestCase):
         """Resource-only DLL has entry_point_rva == 0."""
         # We need to override the standard `_build_pe` entry_rva=0x1000
         # default. Bypass by constructing fields directly.
-        pe_off = 0x40
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 1, 0x12345678, 0, 0, 0xE0,
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            0xE0,
             0x010F | 0x2000,  # add DLL flag
         )
         opt = _opt_header_pe32(entry_rva=0, data_dirs=())
@@ -4776,12 +5500,24 @@ class PEEdgeCasesTest(unittest.TestCase):
         struct.pack_into("<II", body, 0x50, 0x1010, 0x1020)
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x100, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x100},
-                {"name": b".rdata", "vsize": 0x100, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x100,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x100,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x100,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(0, 0)] * 10 + [(rdata_rva, lc_size)],
         )
@@ -4801,24 +5537,43 @@ class PEEdgeCasesTest(unittest.TestCase):
         dll_name_rva = rdata_rva + 0x30
         body = bytearray(0x80)
         struct.pack_into(
-            "<IIHHIIIIIII", body, 0x00,
-            0, 0, 0, 0,
+            "<IIHHIIIIIII",
+            body,
+            0x00,
+            0,
+            0,
+            0,
+            0,
             dll_name_rva,
             1,
             0xFFFFFFFF,  # num funcs — absurd
             0,
-            funcs_rva, 0, 0,
+            funcs_rva,
+            0,
+            0,
         )
         struct.pack_into("<I", body, 0x28, 0x1000)
         body[0x30 : 0x30 + 11] = b"FuzzDll\x00\x00\x00\x00"
         pe_bytes = _build_pe(
             sections=[
-                {"name": b".text", "vsize": 0x10, "vaddr": 0x1000,
-                 "rsize": FILE_ALIGN, "rptr": FILE_ALIGN,
-                 "chars": 0x60000020, "body": b"\x90" * 0x10},
-                {"name": b".rdata", "vsize": 0x80, "vaddr": rdata_rva,
-                 "rsize": FILE_ALIGN, "rptr": rdata_rptr,
-                 "chars": 0x40000040, "body": bytes(body)},
+                {
+                    "name": b".text",
+                    "vsize": 0x10,
+                    "vaddr": 0x1000,
+                    "rsize": FILE_ALIGN,
+                    "rptr": FILE_ALIGN,
+                    "chars": 0x60000020,
+                    "body": b"\x90" * 0x10,
+                },
+                {
+                    "name": b".rdata",
+                    "vsize": 0x80,
+                    "vaddr": rdata_rva,
+                    "rsize": FILE_ALIGN,
+                    "rptr": rdata_rptr,
+                    "chars": 0x40000040,
+                    "body": bytes(body),
+                },
             ],
             data_dirs=[(rdata_rva, 0x80)],
         )
@@ -4831,10 +5586,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         """PE spec caps NumberOfSections at 96. Parser must not iterate
         a fuzzed huge value (e.g. 0xFFFF) past the cap. Provide enough
         bytes for the cap (96 * 40 = 3840) but declare 0xFFFF sections."""
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 0xFFFF, 0x12345678, 0, 0, 0xE0, 0x010F,
+            0x014C,
+            0xFFFF,
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         opt = _opt_header_pe32(entry_rva=0x1000)
         # Exactly 96 zeroed section headers — enough to hit the cap
@@ -4852,10 +5612,15 @@ class PEEdgeCasesTest(unittest.TestCase):
         not assume any specific value, and entry_point_va must compose
         correctly."""
         # Standard PE32 with ImageBase overridden to 0x10000.
-        coff_off = 0x40 + 4
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 1, 0x12345678, 0, 0, 0xE0, 0x010F,
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            0xE0,
+            0x010F,
         )
         opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
         # ImageBase field is at offset 28 in PE32 optional header.
@@ -4874,13 +5639,18 @@ class PEEdgeCasesTest(unittest.TestCase):
         """Some malformed/fuzzed PEs declare NumberOfRvaAndSizes far
         beyond the canonical 16. Parser must cap iteration at 16 rather
         than walking past the optional header into section territory."""
-        coff_off = 0x40 + 4
         # Standard PE32 optional header (96 bytes) plus 16 data dir
         # slots — total 224 = 0xE0 — but NumberOfRvaAndSizes claims 9999.
         size_of_opt = 0xE0
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 1, 0x12345678, 0, 0, size_of_opt, 0x010F,
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            size_of_opt,
+            0x010F,
         )
         opt = bytearray(_opt_header_pe32(entry_rva=0x1000))
         # NumberOfRvaAndSizes is the LAST DWORD before the data
@@ -4903,24 +5673,51 @@ class PEEdgeCasesTest(unittest.TestCase):
         # We construct an optional header by hand with NumberOfRvaAndSizes=2
         # — only Export + Import slots are real; the parser must not try
         # to read Resource / Exception / etc.
-        coff_off = 0x40 + 4
         size_of_opt_hdr = 96 + 16  # standard PE32 fields + 2 data dirs
         coff = struct.pack(
             "<HHIIIHH",
-            0x014C, 1, 0x12345678, 0, 0, size_of_opt_hdr, 0x010F,
+            0x014C,
+            1,
+            0x12345678,
+            0,
+            0,
+            size_of_opt_hdr,
+            0x010F,
         )
         # Standard fields (28) + windows (68) — last field is
         # NumberOfRvaAndSizes which we set to 2.
         opt = struct.pack(
             "<HBBIIIIIIIIIHHHHHHIIIIHHIIIIII",
-            0x010B, 6, 0,
-            0x200, 0x200, 0, 0x1000, 0x1000, 0x2000,
-            0x400000, 0x1000, 0x200,
-            4, 0, 0, 0, 4, 0,
-            0, 0x4000, 0x200, 0,
-            3, 0,
-            0x100000, 0x1000, 0x100000, 0x1000,
-            0, 2,                              # NumberOfRvaAndSizes = 2
+            0x010B,
+            6,
+            0,
+            0x200,
+            0x200,
+            0,
+            0x1000,
+            0x1000,
+            0x2000,
+            0x400000,
+            0x1000,
+            0x200,
+            4,
+            0,
+            0,
+            0,
+            4,
+            0,
+            0,
+            0x4000,
+            0x200,
+            0,
+            3,
+            0,
+            0x100000,
+            0x1000,
+            0x100000,
+            0x1000,
+            0,
+            2,  # NumberOfRvaAndSizes = 2
         )
         # Just two directory entries (Export + Import, both empty).
         opt += struct.pack("<IIII", 0, 0, 0, 0)

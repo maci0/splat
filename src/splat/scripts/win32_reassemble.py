@@ -64,13 +64,13 @@ def _detect_bitness(yaml_path: Path, conf: dict) -> bool:
     return magic == 0x20B
 
 
-def _run(
-    cmd: List[str], verbose: bool, cwd: Optional[Path] = None
-) -> None:
+def _run(cmd: List[str], verbose: bool, cwd: Optional[Path] = None) -> None:
     if verbose:
         prefix = f"(cd {cwd}) " if cwd else ""
         print(f"$ {prefix}" + " ".join(str(c) for c in cmd))
-    r = subprocess.run(cmd, capture_output=True, cwd=str(cwd) if cwd else None)
+    r = subprocess.run(
+        cmd, capture_output=True, cwd=str(cwd) if cwd else None, check=False
+    )
     if r.returncode != 0:
         sys.stderr.write(r.stderr.decode(errors="replace"))
         log.error(f"win32_reassemble: command failed: {cmd[0]}")
@@ -175,10 +175,14 @@ def reassemble(yaml_path: Path, out_path: Path, verbose: bool = False) -> Path:
         _run(
             [
                 objcopy,
-                "-I", "binary",
-                "-O", bin_obj_fmt,
-                "-B", bin_obj_arch,
-                bin_path.name, str(o_path.resolve()),
+                "-I",
+                "binary",
+                "-O",
+                bin_obj_fmt,
+                "-B",
+                bin_obj_arch,
+                bin_path.name,
+                str(o_path.resolve()),
             ],
             verbose,
             cwd=bin_path.parent,
@@ -193,9 +197,14 @@ def reassemble(yaml_path: Path, out_path: Path, verbose: bool = False) -> Path:
         # would otherwise blow past the program-header capacity.
         _run(
             [
-                ld_tool, "-m", ld_emulation, "-N",
-                "-T", ld_path.name,
-                "-o", str(elf_path),
+                ld_tool,
+                "-m",
+                ld_emulation,
+                "-N",
+                "-T",
+                ld_path.name,
+                "-o",
+                str(elf_path),
             ],
             verbose,
             cwd=base_path,
@@ -208,7 +217,8 @@ def reassemble(yaml_path: Path, out_path: Path, verbose: bool = False) -> Path:
         _run(
             [
                 objcopy,
-                "--set-section-flags", ".header=alloc,load,data",
+                "--set-section-flags",
+                ".header=alloc,load,data",
                 str(elf_path),
             ],
             verbose,
@@ -227,10 +237,7 @@ def reassemble(yaml_path: Path, out_path: Path, verbose: bool = False) -> Path:
 
     if verbose:
         sha = hashlib.sha1(out_path.read_bytes()).hexdigest()
-        print(
-            f"Produced {out_path} "
-            f"({len(out_path.read_bytes())} bytes, sha1 {sha})"
-        )
+        print(f"Produced {out_path} ({len(out_path.read_bytes())} bytes, sha1 {sha})")
 
     return out_path
 
@@ -255,9 +262,7 @@ def main() -> None:
     if out_path is None:
         if not target:
             log.error("win32_reassemble: YAML has no target_path; pass --out")
-        base_path = (
-            args.yaml.parent / conf["options"].get("base_path", ".")
-        ).resolve()
+        base_path = (args.yaml.parent / conf["options"].get("base_path", ".")).resolve()
         out_path = Path(str((base_path / target).resolve()) + ".reasm")
 
     reassemble(args.yaml, out_path, verbose=args.verbose)

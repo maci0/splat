@@ -39,6 +39,7 @@ class Win32SegPdata(CommonSegment):
         otherwise resolve to 0 without ld. Inherits from parent
         code-group YAML."""
         from ...platforms.win32 import resolve_exact_encoding
+
         return resolve_exact_encoding(self.yaml, self.parent)
 
     def get_linker_section(self) -> str:
@@ -65,7 +66,6 @@ class Win32SegPdata(CommonSegment):
             return
 
         from ...platforms import win32 as win32_platform
-        from ...util import symbols as symbols_mod
 
         pe = win32_platform.info
         data = rom_bytes[self.rom_start : self.rom_end]
@@ -78,9 +78,9 @@ class Win32SegPdata(CommonSegment):
             the `func_<va>` convention text segments emit at every
             direct call target so cross-segment links resolve."""
             va = pe.image_base + rva
-            entries = symbols_mod.all_symbols_dict.get(va)
-            if entries:
-                return entries[0].name
+            sym = self.get_symbol(va)
+            if sym is not None:
+                return sym.name
             # Pdata entries reference function bodies; cross-segment refs
             # use the same `func_<va>` convention as text segments.
             return f"func_{va:08X}"
@@ -104,9 +104,7 @@ class Win32SegPdata(CommonSegment):
                     # Null terminator — emit it and switch to a .space
                     # block for any remaining padding so the output isn't
                     # dominated by hundreds of zero rows.
-                    f.write(
-                        "    .long 0, 0, 0  /* RUNTIME_FUNCTION terminator */\n"
-                    )
+                    f.write("    .long 0, 0, 0  /* RUNTIME_FUNCTION terminator */\n")
                     i += 12
                     entry_index += 1
                     pad = n - i
@@ -117,7 +115,7 @@ class Win32SegPdata(CommonSegment):
                         # 0x90 (nop), not zero. `.space` zeros the region;
                         # emit the raw bytes instead.
                         if exact:
-                            tail = data[i : n]
+                            tail = data[i:n]
                             hexed = ", ".join(f"0x{b:02X}" for b in tail)
                             f.write(
                                 f"    .byte {hexed}  /* {pad} bytes pad-to-section-end */\n"
@@ -136,17 +134,14 @@ class Win32SegPdata(CommonSegment):
                 base_uw = unwind & 0x7FFFFFFF
                 unwind_label = None
                 if base_uw:
-                    candidate = symbols_mod.all_symbols_dict.get(
-                        pe.image_base + base_uw
-                    )
-                    if candidate:
-                        unwind_label = candidate[0].name
+                    candidate = self.get_symbol(pe.image_base + base_uw)
+                    if candidate is not None:
+                        unwind_label = candidate.name
                 if unwind_label is not None:
                     # Preserve the chained-record bit by ORing it in
                     # after the symbolic subtraction.
-                    uw_expr = (
-                        f"({unwind_label} - 0x{pe.image_base:X})"
-                        + (f" | 0x80000000" if unwind & 0x80000000 else "")
+                    uw_expr = f"({unwind_label} - 0x{pe.image_base:X})" + (
+                        " | 0x80000000" if unwind & 0x80000000 else ""
                     )
                 else:
                     uw_expr = f"0x{unwind:X}"

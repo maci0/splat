@@ -2,138 +2,108 @@
 
 ### Unreleased
 
-* Add support for Win32 PE binaries built with MSVC 6.
-  * New `platform: win32` option, a self-contained PE32/PE32+ header parser, and a Capstone-based x86 disassembler.
-  * New `compiler: MSVC6` profile.
-  * Optional dependency group `win32` (capstone).
-  * New segtypes under `segtypes/win32/`: `header`, `text`, `data`, `rodata`, `bss`, `bin`.
-  * The header segtype emits a structured, field-by-field dump of the DOS stub, COFF file header, optional header (PE32 and PE32+) and all 16 data directories.
-  * The text segtype resumes disassembly after undecodable bytes so embedded jump tables / data in real-world `.text` sections do not truncate the dump.
-  * `create_config` now auto-generates a splat config and `symbol_addrs.txt` from a Win32 PE input, labelling the PE entry point as `entrypoint`.
-  * Win32 PE parser now reads the export table; `create_config` emits a `symbol_addrs.txt` entry per exported function (named and ordinal-only) so DLLs surface their public API as labels in the disassembly.
-  * Win32 PE parser now reads the Import Table (DLL name + symbol name per IAT slot, ordinal-only imports included). `create_config` emits one `imp_<DLL>_<func>` symbol per IAT slot and the disassembler annotates each memory operand that resolves to a known symbol — so `call dword ptr [<iat>]` reads with the imported function name in a trailing comment.
-  * Win32 text segment now does a pre-pass to gather every direct `call`/`jmp` immediate target inside the segment and emits a `func_<addr>:` (`.global`) or `loc_<addr>:` label at each, so the disassembly reads as a function-segmented view instead of a flat stream.
-  * Win32 rodata segment now detects NUL-terminated printable ASCII runs and emits them as `.asciz` directives (with the usual escape sequences) instead of raw `.byte` blocks.
-  * Win32 PE parser now reads the Base Relocation Table; data/rodata segments emit relocation-marked positions as `.long` (or `.quad` for PE32+) entries with a symbolic target comment. Text segments seed their function-label set with the resolved pointer targets so data-driven references (vtables, indirect call tables) get a labelled landing site.
-  * Win32 text disassembler now resolves both IMM and MEM operands through the splat symbol table, falling back to `func_<va>` / `code_<va>` / `D_<va>` synthesized labels based on which PE section the operand targets. When an immediate points at a printable NUL-terminated run in a real section, the disassembly inlines the string body so call-sites like `push 0x100260dc /* "KERNEL32" */` are immediately readable.
-  * Win32 rodata segments fall back to a heuristic pointer scan when the PE has no .reloc table (RELOCS_STRIPPED EXEs). Candidates are restricted to 4-byte-aligned words whose value lands inside an executable section, so vtables and jump tables get pointer-style `.long` emission even without ground-truth relocations.
-  * Win32 text disassembler rewrites the operand string so resolved hex addresses appear as their symbolic labels. `call dword ptr [0x10024050]` becomes `call dword ptr [imp_KERNEL32_dll_CreateThread]`, `push 0x100093a0` becomes `push func_100093A0`, `je 0x10001021` becomes `je loc_10001021` — the file is now linkable against itself instead of treating addresses as opaque numbers.
-  * New `test_win32_pe.py` unit tests cover `parse_pe`, `parse_exports`, `parse_imports`, and `parse_relocations` against handcrafted PE byte fixtures so the parsers don't regress.
-  * Win32 text segments trim disassembly to the PE section's `VirtualSize`, emitting a single trailing `.space` directive for the file-alignment NUL padding. Stops thousands of bogus `add byte ptr [eax], al` lines from polluting the output.
-  * Win32 text disassembler now identifies single-instruction `jmp dword ptr [<iat>]` thunks at every call target and relabels them `<importName>_thunk` so callers read as `call imp_KERNEL32_dll_RtlUnwind_thunk` instead of `call func_10023840`.
-  * Win32 PE parser now reads the Debug directory's CodeView record and surfaces the embedded PDB filename (`pe.pdb_path`). The header segment emits a `/* CodeView PDB: ... */` comment when present — useful for context on real-world builds.
-  * Win32 PE parser now reads the TLS directory and lists every callback VA (`pe.tls_callback_vas`). Text segments seed those VAs into the call-target set so TLS-only entry points get labelled, and the header dump lists them as a comment.
-  * Win32 header segment now emits a one-page summary block at the top of `header.s` decoding the load-bearing PE facts (Machine, ImageBase, EntryPoint, Subsystem, Characteristics flags by name, section table with size/flags, exports & imports grouped by DLL with counts, PDB path, TLS callbacks, reloc count, resource type counts). Reading a real binary's overview no longer requires grepping through the byte dump.
-  * Win32 PE parser now walks the resource directory (3 levels: type → name → language) and records every leaf entry into `pe.resources`. Standard resource type IDs (ICON, BITMAP, VERSION, MANIFEST, ...) get human-readable names; counts surface in the header summary.
-  * Win32 text disassembler collapses runs of `int3` (0xCC) or `nop` (0x90) inter-function padding ≥ 2 bytes into a single `.byte 0xCC, 0xCC, ...  /* Nx int3 padding */` line. On server.dll this collapses 299 padding runs (~2300 lines saved) while keeping the visual function-boundary separator.
-  * Win32 data/rodata segments now emit resolved pointer references as `.long <label>  /* 0x... */` instead of `.long 0x...  /* -> label */`, so the data round-trips through GAS as a reference to the actual symbol (vtables, function tables, IAT slot mirrors).
-  * Win32 data/rodata segments collapse runs of NUL bytes ≥ 8 into a single `.space N` directive. Sparse `.data` and `.reloc` sections shrink dramatically — server.dll's `.data` dropped from 376k lines to 3k, `.reloc` from 457k to 471 (≥99% reduction while staying byte-identical via GAS).
-  * Win32 `.data` segment now opts into string detection by default. Recovers embedded source paths, log filenames, format strings, and error messages without changing the byte layout (`.asciz` round-trips through GAS). Server.dll surfaces 538 strings, Europa1400 4686.
-  * Win32 Debug-directory parser also extracts the CodeView record's GUID (RSDS) or 32-bit signature (NB10) plus build Age. Header summary now prints `PDB GUID/Age: <guid>-<age>` so a reverse-engineer can fetch the matching PDB from a symbol server. Europa1400 surfaces `3FFD22BC-2` (NB10, MSVC6).
-  * Win32 text disassembler builds the export/import label map directly from `pe.exports` / `pe.imports`, so the same self-linking output (`Init:`, `Exit:`, `call dword ptr [imp_KERNEL32_dll_CreateThread]`) is produced even when `symbol_addrs.txt` was never authored. A `symbol_addrs` entry, when present, still takes precedence over the synthesized name.
-  * Win32 PE parser now decodes the VS_VERSIONINFO StringTable blobs from every VERSION resource — `CompanyName`, `FileVersion`, `ProductName`, `OriginalFilename`, etc. (`pe.version_info`). The header summary lists each key/value pair so a build's metadata surfaces in the output.
-  * Capstone disassembler now defers engine creation to first use and picks `CS_MODE_64` when the parsed PE is PE32+. A new `test/win32_app64/` fixture (synthetic x86_64 PE with `mov eax, 0x2a; ret`) is split end-to-end by the test suite, exercising both `parse_pe` PE32+ paths and 64-bit capstone disasm.
-  * Win32 text segment now writes a sidecar `<segname>.functions.txt` index next to the `.s` file. One line per detected function (address, size in bytes, label name) — exports, thunks, entrypoint, and synthesized `func_<va>` entries all appear. Lets a reader jump straight to a function in the huge text dump.
-  * Win32 text disassembler resolves PE32+ RIP-relative memory operands. `mov rax, [rip + 0x...]` is rewritten to `mov rax, [<label>]` when the target resolves, with a `/* [rip→0x...] = <label> */` annotation. Necessary for any non-toy x86_64 PE.
-  * Win32 PE parser now reads data directory 11 (Bound Import Table), exposing `pe.bound_imports` with DLL name, build timestamp, and forwarder-ref descriptors. Header summary lists them.
-  * Win32 PE parser now reads data directory 3 (Exception Table). For PE32+ each RUNTIME_FUNCTION entry's BeginAddress is seeded into the text segment's call-target set so SEH-only entry points get a labelled landing site, and the count surfaces in the header summary.
-  * Win32 text op_str substitution gates hex literals on `[image_base, image_base + size_of_image)` so stack-frame offsets (`[esp + 0xc]`) and small integer constants don't get mistakenly rewritten to symbols. Image addresses still substitute; everything else stays raw.
-  * Win32 header summary decodes DllCharacteristics flags by name (HIGH_ENTROPY_VA, DYNAMIC_BASE, NX_COMPAT, NO_SEH, GUARD_CF, TERMINAL_SERVER_AWARE, ...).
-  * `create_win32_config` emits a `<name>_bss` segment for any file-backed section whose `VirtualSize > SizeOfRawData` (typical of MSVC zero-init globals at the tail of `.data`). The generated layout now matches the runtime image. Europa1400's `.data` virtual tail is 14 MB; surfaced as `.space 0xEC8424` in `data_bss.s`.
-  * Win32 PE parser now reads data dir 10 (Load Config). For PE32 binaries the `/SAFESEH` handler RVAs and `/GS` SecurityCookie VA are extracted; handler entries seed `Win32SegText` call_targets so SEH-only entry points get labelled. Header summary lists the cookie VA + handler count.
-  * Win32 PE parser now reads data dir 13 (Delay Import). Both v1 (VA-based) and v2 (RVA-based) `IMAGE_DELAYLOAD_DESCRIPTOR` chains are walked. Each delayed-import entry surfaces as `pe.delay_imports`, contributes a `dimp_<DLL>_<func>` label to the disassembler's IAT slot map (distinct from eager `imp_` prefix), and shows up in the header summary grouped by DLL.
-  * Win32 LoadConfig parser also extracts the `/guard:cf` GuardCFFunctionTable (`pe.cfg_function_rvas` + `pe.cfg_flags`). Each entry is a valid indirect-call target — seeded into the text segment's call_targets so CFG-only entry points get labelled. Per-entry stride is computed from the top nibble of GuardFlags as required by the spec.
-  * Win32 text segment now treats embedded pointer slots inside `.text` (typical MSVC switch jump-tables and inline function-pointer tables) as data: emits `.long <label>` and skips capstone for those bytes. Previously the leading byte would be mis-decoded as an instruction (`popal`, `add`, etc.). Detection uses the base-relocation table so the source-of-truth is the loader itself.
-  * Win32 text op_str substitution emits `offset <label>` for image-address immediates in non-branch instructions (`mov`, `push` source operands). GAS intel-syntax requires the `offset` keyword to disambiguate "immediate address of label" from "memory load via label". `call`/`jmp` operands stay as bare labels (assembled as relative branches). Memory-operand brackets (`[<label>]`) also stay bare.
-  * **Server.dll text disassembly now assembles cleanly with GAS** (`as --32 text_main.s -o text_main.o` succeeds, produces a 357 KB object file). End-to-end round-trip validated.
-  * Win32 text disassembler now rewrites several GAS-incompatible capstone outputs to keep `.s` output assemblable: `popal`/`pushal` → `popad`/`pushad`; `xword ptr` → `tbyte ptr`; size qualifiers stripped from `fnsave`/`fxsave`/`frstor`/etc.; negative `enter` second operands normalised to unsigned imm8. String previews escape `*/` so embedded `*/ ` doesn't terminate the GAS C-style comment.
-  * Win32 text op_str substitution skips hex literals that sit after `+`/`-` inside register-relative memory expressions (`[reg + 0xN]`), since those are constant displacements rather than addresses — substituting would produce `*ABS* - *UND*` link errors. **Exception**: scale-indexed `[reg*N + 0xADDR]` jump-table dispatch DOES substitute, since the displacement is the table base address.
-  * **Europa1400Gold_TL.exe (2.8 MB, MSVC6 PE32 EXE) now assembles cleanly with GAS** — `as --32 text_main.s` succeeds, produces a 5.2 MB object file. Combined with server.dll's clean assembly, both real-world test binaries now round-trip end-to-end through splat → GAS.
-  * Integration tests now run `as --32` / `as --64` on the produced `.s` and fail if GAS rejects the output. Both synthetic fixtures (`win32_app` 32-bit and `win32_app64` 64-bit, including RIP-relative load) are regression-protected against future GAS-incompatibility.
-  * Win32 cross-segment text references resolve to `func_<va>` (instead of the old `code_<va>`) — matches the naming convention each target segment emits when building its own call_targets set, so multi-text-segment images link cleanly at GAS time.
-  * PE summary block now lists `SizeOfStackReserve / Commit` and `SizeOfHeapReserve / Commit` (DWORD for PE32, QWORD for PE32+).
-  * Hardened PE parsers against malformed input: `_read_cstr` caps at 4096 bytes and rejects out-of-range offsets; resource-tree walk caps recursion at depth 8 and entries-per-node at 65536; import / delay-import / bound-import / TLS-callback / runtime-function loops all carry explicit max-iteration bounds. Optional header is rejected when smaller than the per-format minimum (96 / 112) or when it would run past file end.
-  * Added edge-case tests for `_read_cstr` truncation, out-of-bounds `va_to_file_offset`, empty data directory index, and resource-only DLLs with `entry_point_rva == 0`.
-  * Fixed PE32+ operand mask: 64-bit IMM / MEM disp values were getting truncated to 32 bits in `operand_comments`, `substitute_op_str`, and the IAT thunk-detection path. Now uses `0xFFFF_FFFF_FFFF_FFFF` mask when `pe.is_pe32_plus`.
-  * Added UTF-16LE wide-string detection for data/rodata segments. Cautious ASCII-subset matcher (high byte must be 0, low byte must be printable) avoids false positives from binary data while catching MSVC `L"..."` literals. Emitted as a `/* L"text" */` comment plus the original raw `.byte` sequence so the layout round-trips byte-for-byte regardless of whether the assembler supports a wide-string directive.
-  * PE summary block now decodes `MajorLinkerVersion` / `MinorLinkerVersion` to a Visual C++ product name (e.g. `6.00 (MSVC 6.0)`, `14.x (VS 2015-2022)`) and renders the COFF `TimeDateStamp` as a UTC ISO date. Confirmed on both real-world fixtures: server.dll and Europa1400 both surface as MSVC 6.0 builds.
-  * Fixed PE32+ pointer-slot width in `Win32SegData`: was reading 4-byte slots even when relocations were DIR64. Now emits `.quad <label>` for 8-byte pointers on PE32+, and the heuristic-pointer scan strides 8 bytes / aligns to 8.
-  * Fixed PE32+ pointer-target seeding in `Win32SegText`: was reading 4 bytes per relocation entry regardless of PE bitness, missing the high half of DIR64 targets. Now reads 8 bytes on PE32+.
-  * Hoisted `import struct` to module scope in `text.py` (was re-imported every embedded-pointer slot).
-  * Trimmed redundant operand annotations: `operand_comments` now only emits *additional* information beyond what's already encoded by the substituted op_str (string previews, RIP-relative target preview). The bare `0x...=label` mapping is suppressed since the label name is already visible in the instruction text — saving a comment per resolved operand and making the output significantly less cluttered.
-  * `<segname>.functions.txt` sidecar gains a self-documenting two-line header (segment name + column legend). Addresses widen to 16 hex chars for PE32+.
-  * `<segname>.functions.txt` adds a `kind` column distinguishing `func` (anonymous call-target), `export` (DLL export), `thunk` (single-insn `jmp [iat]`), `entry` (PE entry point), and `decl` (user-declared via `symbol_addrs.txt`). Server.dll yields 873 func + 2 export + 8 thunk + 1 entry entries.
-  * Tightened heuristic pointer detection: in addition to the code-section bounds check, the target's first byte must be a plausible x86 function-prologue opcode (push reg, push imm, sub esp, mov reg/mem, mov reg imm32, call/jmp rel32, indirect call, ret, int3, REX). Cut Europa1400 false positives from 801 to 668 entries while preserving every real function-pointer hit. `raw_image` now stored on `win32_platform` so heuristics can peek at section bytes.
-  * `substitute_op_str` skips all hex literals preceded by `-` inside brackets — `[reg*N - 0xADDR]` substitution would otherwise produce `*ABS* - *UND*` GAS errors. Combined with the existing `+` guard, brings Europa1400 to **clean assembly with zero errors** (5.29 MB object).
-  * IAT thunk recognition + `create_win32_config` now handle delay-load imports (`dimp_<DLL>_<func>_thunk` labels for `jmp dword ptr [<delay_iat>]` stubs).
-  * Heuristic prologue opcode set expanded (lea, ALU r/m imm, 16-bit override, fs/gs prefix, x86_64 REX variants 0x49/0x4C/0x4D). Recovers ~3% more real function pointers in stripped EXEs (Europa1400: 668 → 688) without regressing the false-positive filter.
-  * New `exact_encoding: true` per-subsegment YAML option on `Win32SegText`. When set, every decoded instruction is emitted as a `.byte 0xAA, 0xBB, ...` directive carrying the original bytes verbatim, with the disassembly moved to a trailing comment. Embedded `.long`/`.quad` pointer slots in `.text` also emit raw values (skip the symbolic label resolution). Result: **bit-identical round-trip**. Verified on both real-world fixtures:
-    - server.dll text: 143360/143360 bytes match (100.0000%)
-    - Europa1400Gold_TL.exe text: 2490368/2490368 bytes match (100.0000%)
-    Decompilation-style readable disasm and matching-byte reassembly now both supported by toggling one flag. The flag also inherits from the parent code-group YAML so a whole text group can opt in with one setting.
-  * `Win32SegData` honours the same `exact_encoding: true` flag. When active, pointer slots emit raw `.long 0xN` / `.quad 0xN` (no symbolic label substitution), string detection is bypassed, and every non-pointer byte becomes a `.byte` directive. Combined with the text-segment flag, a project can now reassemble a binary's entire `.text + .rdata + .data + .reloc` byte-identically through GAS without any link-time symbol resolution.
-    Verified end-to-end on server.dll across every file-backed section:
+* Add support for Win32 PE binaries (x86 PE32 and x86_64 PE32+).
+  * New `platform: win32` option backed by a self-contained PE parser
+    (every populated data directory + COFF symtab + x64 SEH unwind
+    info + the .NET CLR header) and a Capstone-based x86 / x86_64
+    disassembler. Optional dependency group `win32` pulls in
+    `capstone>=5.0.0`.
+  * New segtypes under `segtypes/win32/`: `header` (structured PE
+    header byte-by-byte dump + human-readable summary block),
+    `text` / `asm` (Capstone disasm with GAS-compatible operand
+    rewrites), `data` / `rodata` (heuristic string + pointer
+    detection, NUL-run collapse), `bss` (NOLOAD reservation), `bin`
+    (opaque blob for `.reloc` / `.rsrc` / signature / COFF symtab),
+    `pdata` (PE32+ RUNTIME_FUNCTION rows with optional decoded
+    UNWIND_INFO opcode lists).
+  * New compiler tags: `MSVC2..14`, `MINGW`, `CLANG_LLD`. All share
+    the same MASM-style asm conventions; distinct names preserve
+    provenance of generated configs.
+  * `create_config` auto-detects PE files (MZ + PE magic), generates
+    a YAML + symbol_addrs.txt with named symbols for the entrypoint,
+    exports (incl. forwarders as comments), eager + delay imports,
+    TLS callbacks, SafeSEH handlers, /guard:cf targets, /GS security
+    cookie, .NET CLR metadata pointers, and unwind RVAs.
+  * `auto_link_sections` default is `[]` for `platform: win32` (PE
+    sections are independent subsegments — implicit MIPS-style
+    sibling generation produces phantom linker entries otherwise).
+  * New `python -m splat.scripts.win32_reassemble <yaml>` script:
+    runs `as` + `ld` + `objcopy` against the splat-generated
+    layout to reconstruct a PE. With `exact_encoding: true` on
+    text/data/pdata subsegments, the reassembled PE is
+    byte-identical to the original. Verified end-to-end on
+    5 real-world binaries: Sysinternals PsExec (PE32) + PsExec64
+    (PE32+), PuTTY 0.60 (vintage MSVC6), PuTTY 0.70 32-bit (MSVC14
+    with `.00cfg` CFG section), PuTTY 0.83 64-bit (MSVC14 PE32+
+    with 2410 RUNTIME_FUNCTION entries).
+  * Tests: 199 unit tests covering the PE parser, label generation
+    helpers, segtype emission, header rendering, and string
+    detectors; 10 end-to-end tests covering split + reassemble +
+    GAS-clean assembly on both PE32 and PE32+ synthetic fixtures.
+### 0.50.0
 
-    | Section | Original size | Reassembled match |
-    |---|---|---|
-    | .text   | 143360 bytes  | 143360/143360 (100.0000%) |
-    | .rdata  |  12288 bytes  |  12288/12288 (100.0000%) |
-    | .data   |  57344 bytes  |  57344/57344 (100.0000%) |
-    | .reloc  |  69632 bytes  |  69632/69632 (100.0000%) |
+* We have skipped to version 0.50.0, as this version may introduce several breaking changes and require some extra care when migrating
+* BREAKING CHANGES:
+  * Declaring an overlay symbol but not specifying its `segment:` or `rom:` in symbol_addrs is no loger accepted. A warning will be emitted and the symbol won't be used.
+  * Associating a symbol with a segment that is not within the Vram or Rom address space for that segment is no longer accepted.
+    * Use the new prioritized segment system to tell splat to use a symbol from a specific segment.
+  * Declaring a symbol without an associated segment and outside the Vram space of any global segments is no longer accepted.
+    * Use the new absoulte symbols system to declare symbols that aren't part of any real segment.
+  * `splat.utils.symbols.all_symbols_dict` and `splat.utils.symbols.all_symbols_ranges` have been removed.
+  * The algorithm for checking vram overlaps between global segments and overlays have been changed and it is more strict now. This means it is more likely to report conflicts, which may result in errors.
+    * A common source of errors is giving a vram address (usually `vram: 0xA4000040`) for the ipl3 segment on n64 projects. A recommened workaround is to either remove the vram for this segment or tag it with its own `exclusive_ram_id` (i.e. `exclusive_ram_id: ipl3`).
+  * Autogenerated symbol names may have changed
+    * Previously, splat failed to properly set some attributes required for autogenerated symbol naming and thus symbolized them incorrectly. For example, it only used the vram address (like `D_{VRAM}`) when it should have been using both the vram and rom addresses (`D_{VRAM}_{ROM}`) for naming overlay symbols. These attributes are now correctly set, resulting in improved symbol names. This may break existing symbols in C code, so please keep this in mind when migrating.
+* Rewrite symbol management system.
+  * Completely change how the internal symbol tracking system works, aiming to fix issues with overlapping addresses in overlays.
+  * Ideally this should fix most issues related to using a symbol from overlay A in overlay B even when both are marked with the same `exclusive_ram_id`.
+  * Because of this, splat is a lot more strict about user-declared symbols. From now on, splat will warn and discard symbols that it can't figure out the corresponding segment on its own, instead of just trying to use them whenever they fit. This is mostly an issue for declaring symbols for overalys with overlapping addresses (segments declared with `exclusive_ram_id`).
+* Add prioritized segment system.
+  * Allows to tell which segments should be prioritized when looking up for symbol references.
+  * This way a user can choose how to disambiguate references to multiple segments with overlapping addresses, for example, referencing a an address shared by multiple overlays (say A, B and C) by telling the segment to lookup symbols from segment B first instead of looking into any other arbitrarily.
+  * Also allows global segments to reference symbols from specific overlays.
+  * Each segment can have their own list of prioritized segments. This list can be declared with the `prioritized_segments` yaml attribute on the segment level.
+  * This attribute is only accepted for top-level segments, subsegments silently ignore this attribute.
+* Add absolute symbols system.
+  * Allows declaring symbols that are not part of any segment of the ROM.
+  * Declared with attribute symbol `absolute:True`.
+  * Symbols declared this way always take priority over everything else when looking up for symbol references.
+  * This should not be used to declare symbols that are part of the actual address space of the rom.
+* `alabel` is recognized as a symbol type.
+  * An alternative entrypoint for functions.
+  * Works similarly to branch labels, in the way that it is used to declare symbols in the middle of functions.
+* `spimdisasm` 1.42.1 or above is now required.
 
-    Sum: 282624 / 282624 — full byte-identical round trip on every section.
+### 0.41.1
 
-    The header segment also round-trips byte-identical *without* the
-    `exact_encoding` flag (its structured `.long` / `.short` / `.byte`
-    emission produces the same bytes the linker wrote). Combined with the
-    body sections, server.dll reassembles **286720 / 286720 = 100%
-    byte-identical to the original 286 KB binary** — every header byte,
-    every instruction, every pointer table.
-  * Import and delay-import descriptors with `iat_rva == 0` are now skipped — without an IAT base any per-thunk slot VA would be meaningless. Prevents bogus `imp_*` entries in malformed binaries.
-  * `create_win32_config` surfaces forwarded exports as a comment block in `symbol_addrs.txt` so users can see the `<exported_name> -> KERNEL32.RealName (ordinal N)` mapping even though forwarders have no in-image VA.
-  * `<segname>.functions.txt` kind column expanded to recognize additional provenance: `tls` (TLS callback), `seh` (SafeSEH handler), `cfg` (Control Flow Guard valid target), `rt` (PE32+ Exception Directory RUNTIME_FUNCTION begin). All checked via pre-computed sets for O(1) lookup per entry.
-  * Added `Win32SegAsm` as alias for `Win32SegText` so YAML can use the conventional `type: asm` segtype name.
-  * Capstone `riz`/`eiz` "no index" placeholder in SIB expressions stripped from the operand string — GAS doesn't recognise it.
-  * Scalar SSE instructions (`comisd`/`addsd`/`mulsd`/etc.) rewrite `xmmword ptr` to `qword ptr`; scalar single-precision (`comiss`/`addss`/etc.) rewrite to `dword ptr`. GAS rejects capstone's default xmmword size for scalar ops.
-  * **Validated end-to-end against real-world PE32+ binaries**:
-    - **PuTTY 0.83 x64** (Simon Tatham, MSVC 14.x, 1.7 MB): 10 sections including `.pdata`/`.00cfg`/`.gxfg`/`.tls`/`_RDATA`. 346 imports across 8 DLLs, 2410 RUNTIME_FUNCTION entries, 4211 base relocations, 24 resources, full VS_VERSIONINFO. Assembles to 2.6 MB object.
-    - **Sysinternals PsExec.exe** (MSVC 14.34 PE32): 34 SafeSEH handlers correctly surfaced as `seh` kind in functions.txt. Assembles to 634 KB object.
-    - **Sysinternals PsExec64.exe** (MSVC 14.34 PE32+): 1049 RUNTIME_FUNCTION entries surfaced as `rt` kind. Assembles to 856 KB object.
-  * New `Win32SegPdata` segtype renders a PE32+ `.pdata` section as one `RUNTIME_FUNCTION` row per 12-byte record. Each row emits `.long <BeginLabel> - <ImageBase>, <EndLabel> - <ImageBase>, <UnwindRVA>` with `func_<va>` labels resolved by reflinking through the symbol table — the table reads as a function boundary map rather than an opaque byte blob. Recognized via `type: pdata` in YAML.
-  * Explicit reject for ARM64 / ARM32 PE binaries: structures parse but the disasm path needs a non-x86 Capstone backend. Message tells the user exactly what's wrong and where the boundary is.
-  * `test-binaries/zoo/` holds a README cataloguing freely-downloadable PE corpus URLs (PuTTY, Sysinternals, PuTTY x64, Quake source builds, ReactOS) plus a `.gitignore` so the binaries themselves stay outside the repo. Expanded to 30 entries across six era bands (1995-1999 through 2015-2025) plus ARM64 — each with verified redistributable license and direct curl-able URL.
-  * Centralised label sanitization into `platforms/win32` (`sanitize_label`, `compute_iat_labels`, `compute_export_labels`). The three callers — `create_win32_config` (symbol_addrs.txt), `Win32SegText` (IAT/export label substitution), and pdata renderer — now read from the same map so labels can't diverge between symbol_addrs and disassembly.
-  * Hardened all parser loops against fuzzed PE inputs: `NumberOfFunctions` / `NumberOfNames` (export directory), `NumberOfRvaAndSizes`, `NumberOfSections`, `SEHandlerCount` / `GuardCFFunctionCount` (Load Config), and `NumberOfRvaAndSizes` (structured header dump) all now cap declared counts before iterating. A malformed PE declaring 4 billion entries no longer triggers a 4-billion-iteration scan.
-  * Label generation now preserves uniqueness across categories: entrypoint + exports share a label namespace (an export literally named `entrypoint` gets the ordinal suffix); colliding sanitised export labels (e.g. C++ overloads `foo@bar` + `foo$bar` both → `foo_bar`) get an ordinal suffix; colliding eager/delay IAT slot labels (same DLL, distinct mangled name) get an RVA suffix; duplicate PE section names get a counter suffix in YAML.
-  * GAS label hardening in symbol_addrs emission: identifiers starting with a digit (legacy D3D, Delphi `$DllMain` entries, 7-Zip API) get a `_` prefix to remain valid GAS labels. DLL stems in import labels are fully isalnum-sanitised so `api-ms-win-*` hyphens no longer leak into emitted labels.
-  * `create_win32_config` auto-detects the MSVC version from the optional header's `MajorLinkerVersion` and tags `compiler: MSVC2..MSVC14` accordingly. New compiler.py registrations for the same set (all share the MSVC-MASM-style asm config; distinct names preserve provenance).
-  * `create_win32_config` auto-classifies PE32+ `.pdata` sections as the `pdata` subsegment type (RUNTIME_FUNCTION rows via Win32SegPdata), and `.reloc` / `.rsrc` as opaque `bin` (skips string/pointer heuristics over structured loader data).
-  * `create_win32_config` now emits `tls_callback_N` / `safeseh_N` / `cfg_target_N` / `security_cookie` symbol rows so disassembly cross-references resolve to labels instead of raw VAs. CFG entries cap at 1024 rows to keep `symbol_addrs.txt` readable (text-segment seeding still covers all entries for in-file references).
-  * `create_win32_config` quotes `target_path` in generated YAML, falls back to a `pe_target` placeholder when basename sanitisation yields empty, treats sections with `SizeOfRawData > 0` but `PointerToRawData = 0` as BSS-equivalent (loader convention — file doesn't back the bytes), skips degenerate `SCN_CNT_UNINITIALIZED_DATA` sections with `VirtualSize = 0`, and now models the virtual-tail BSS on read-only sections too (not just writable `.data`).
-  * `create_win32_config` omits the `entrypoint` symbol when `AddressOfEntryPoint = 0` (DLLs without DllMain) — no more spurious label pointing at the PE header.
-  * PE32+ structured header dump pads ImageBase / EntryPoint / section VAs / TLS callbacks to 16 hex digits so 64-bit address columns line up uniformly. Truncated `SizeOfOptionalHeader` no longer produces zero-width `.short ""` / `.long ""` GAS-rejected directives — runt headers fall back to a single raw byte block.
-  * `_decode_flags` surfaces leftover unknown bits as `unknown 0xN` when a Characteristics or DllCharacteristics value carries bits not in the static lookup table — no more silent information loss.
-  * Wide-string and narrow-string scanners now accept Latin-1 Supplement printable bytes (0xA0-0xFF) so German umlauts, French accents, Spanish ñ, and similar codepoints in localised resources are recognised instead of rejected. Regression test sharpened to a genuine non-Latin-1 codepoint (Polish 'ł' at U+0142).
-  * Win32 text disassembler now detects PE32+ RIP-relative IAT thunks (`jmp qword ptr [rip + disp32]`) — previously only PE32 absolute-disp thunks were recognised, so MSVC x64 import jump-tables stayed as raw `func_<va>` labels. Zero-displacement RIP-relative operands (`[rip]`) — capstone elides the `+ 0x0` literal — now label-resolve correctly.
-  * Win32 import parsers fall back to the 16-bit hint as the import's ordinal when the name string at the hint/name record is empty — IAT slots in stripped or hand-crafted binaries get `imp_X_ordinal_<hint>` instead of the meaningless `imp_X_ordinal_None`.
-  * Heuristic pointer prologue-byte set expanded (mov mem,imm; x87 FPU group; REX prefixes; inc/dec r32; clc/stc/cli/sti/cld/std) to catch more legitimate function pointers without expanding the false-positive surface.
-  * Default `section_order` includes `.pdata` between `.data` and `.rodata` so PE32+ RUNTIME_FUNCTION segment placement is well-defined.
-  * Test suite grew to 164 unit tests + 4 real-binary round-trip checks (`test_win32_app`, `test_win32_app64`, `test_win32_exact_encoding`, `test_win32_exact_encoding_pe32_plus`) — both byte-compare round-trips and assemble-clean smoke tests on the synthetic fixtures. The PE32+ exact-encoding test is new and catches x86_64-specific capstone-vs-GAS divergences the smoke-only path would miss.
-  * Internal code-quality pass: named constants for `IMAGE_DIRECTORY_ENTRY_*` indices, `IMAGE_OPTIONAL_HEADER.Magic` values, and `IMAGE_FILE_MACHINE_*` codes; extracted `_walk_thunk_array` / `_thunk_layout` / `ptr_layout` / `compute_iat_labels` / `compute_export_labels` / `sanitize_label` helpers to consolidate per-bitness logic and label generation; PE-format dataclasses (PEInfo, PESection, PEExport, PEImport) carry meaningful docstrings explaining semantic contracts. `symbol_addrs.txt` gains a provenance preamble (source filename + truncated sha1) and is regression-protected by an explicit test assertion.
-  * New `python -m splat.scripts.win32_reassemble <yaml>` post-process tool runs `as` + `objcopy -O binary -j <section>` on each split .s file and concatenates the produced bytes in rom_start order to reconstruct a PE. With `exact_encoding: true` on text + data subsegments, produces a **byte-identical PE** — closing the full split → reassemble round-trip. Verified end-to-end by `test_win32_reassemble_byte_identical_with_exact_encoding`.
-  * Auto-detect non-MSVC toolchains: PEs importing `libgcc_s_*`/`libstdc++`/`libwinpthread` (or with a `.CRT` section) tag as `compiler: MINGW`; PEs with `.text$mn`/`.rdata$zzzdebug` section grouping tag as `compiler: CLANG_LLD`. Both compilers registered in `util/compiler.py` alongside MSVC2..MSVC14.
-  * Decoded x64 SEH unwind info: `parse_unwind_info` walks every PE32+ `RUNTIME_FUNCTION`'s `IMAGE_UNWIND_INFO` blob (keyed by RVA in `pe.unwind_info`), surfacing version, prolog size, frame register, and the opcode list (`PUSH_NONVOL`, `ALLOC_SMALL`, `SAVE_NONVOL`, etc.). `Win32SegPdata` annotates each `RUNTIME_FUNCTION` row's trailing comment with the prologue ops. Header summary lists the decoded-record count.
-  * Parsed deprecated COFF symbol table (vintage MSVC 4-6 PEs): `parse_coff_symtab` reads the 18-byte `IMAGE_SYMBOL` records past the last section, handling both short and string-table-referenced names. Exposed as `pe.coff_symbols`; header summary lists up to 8 samples.
-  * Decoded `IMAGE_COR20_HEADER` (data dir 14): `parse_clr_header` populates `pe.clr_header` with runtime version, metadata RVA/size, entry-point token, strong-name signature pointer, and resources pointer. Auto-config emits `clr_metadata`, `clr_strong_name_signature`, `clr_resources` symbols; header summary surfaces the runtime version + key pointers. Metadata table contents themselves still need an ECMA-335 reader (not implemented).
-  * VS_VERSIONINFO `VarFileInfo` translation block decoded: `Translation` key in `pe.version_info` holds a comma-separated list of `0xLLLL/0xCCCC` LangID/codepage pairs.
-  * `pdata.py` resolves the unwind RVA via `symbols_mod.all_symbols_dict`: when `create_win32_config` registered an `unwind_<va>` symbol (one per distinct unwind target), the emitted row references it by name (`(unwind_<va> - ImageBase) | 0x80000000`, chained-record bit preserved) instead of emitting the RVA as raw hex.
-  * `rva_to_file_offset` / `peek_string` reject RVAs in the virtual-only tail of a section whose `VirtualSize > SizeOfRawData` — those bytes aren't backed by the file; the previous behaviour silently mapped them into the next section's raw bytes.
-  * Generated YAML's `target_path` is double-quoted to survive spaces / colons / hashes. Pathological filenames (all-whitespace, all-invalid-chars) fall back to a `pe_target` placeholder. Sections with `SizeOfRawData > 0` but `PointerToRawData = 0` (loader-classified as uninitialised) routed through the BSS path. Authenticode signature (data dir 4) and COFF symtab emit dedicated `signature` / `coff_symtab` bin segments in file-offset order. Resource-only DLLs, BSS-only PEs, and all-forwarder shims handled cleanly.
+* Mark `__romPos` as `HIDDEN`.
+  * Prevents the generated `__romPos` linker symbol from being exported as GLOBAL in the built elf.
+  * Useful for PSX projects with overlays being different binaries from the main program.
+
+### 0.41.0
+
+* Add `bss_size` attribute for `bss` subsegments.
+  * Allows to specify a size for bss subsegments when the size for the subsegment can't be infered.
+  * splat may be unable to infer the size when the bss subsegment is followed by a segment that doesn't define a vram address, like `lib`, so this option is provided as a fallback.
+  * `bss_size` for `bss` segments can only be used if the size can't be infered. It is a hard error to define one when splat can infer the size.
+* Add options `create_data_pads`, `create_rodata_pads` and `create_bss_pads` for controlling spimdisasm autogenerated data, rodata, and BSS/SBSS pad symbols.
+* `spimdisasm` 1.41.0 or above is now required.
+* Expand `dump_symbols` output, also providing segment and subsegment information per symbol.
+* Add `dump_symbols_references` option alongside `dump_symbols`, adding a `referenced_by` column to the `splat_symbols.csv` file.
+
+### 0.40.1
+
+* Always write the link dependency file.
+  * The old behavior only wrote it if the contents were different to the existing one.
+* Internal rework for `bss_size` attribute.
+  * Now internally every segment has a `bss_size` attribute, which is considered in most calculations now.
+  * This fixes some usages where bss segments would report the wrong `vram_end`.
+* Consider zero-sized bss segments as valid if they are the last subsegment of a code segment.
 
 ### 0.40.0
 
-* Append an `-include` directive to the generated elf dependency file.  
-  * Includes the dependency files for each object needed to build the target, simplifying dependency management on the build system.  
+* Append an `-include` directive to the generated elf dependency file.
+  * Includes the dependency files for each object needed to build the target, simplifying dependency management on the build system.
   * This behavior is enabled by default, and can be disabled with the new option `ld_dependencies_include`.
 
 ### 0.39.1

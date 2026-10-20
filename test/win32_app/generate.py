@@ -31,13 +31,23 @@ TEXT_BODY = bytes(
     [
         # main:
         0x55,  # push ebp
-        0x89, 0xE5,  # mov ebp, esp
-        0xB8, 0x2A, 0x00, 0x00, 0x00,  # mov eax, 0x2A
+        0x89,
+        0xE5,  # mov ebp, esp
+        0xB8,
+        0x2A,
+        0x00,
+        0x00,
+        0x00,  # mov eax, 0x2A
         0x5D,  # pop ebp
         0xC3,  # ret
         # _start: calls main, then halts in a tiny loop.
-        0xE8, 0xF1, 0xFF, 0xFF, 0xFF,  # call main (rel32 = -15)
-        0xEB, 0xFE,  # jmp $ (spin)
+        0xE8,
+        0xF1,
+        0xFF,
+        0xFF,
+        0xFF,  # call main (rel32 = -15)
+        0xEB,
+        0xFE,  # jmp $ (spin)
     ]
 )
 
@@ -78,12 +88,27 @@ def build_pe() -> bytes:
     dos = bytearray(64)
     dos[0:2] = b"MZ"
     dos[0x3C:0x40] = struct.pack("<I", 0x80)  # e_lfanew → 0x80
-    dos_stub = bytes(
-        [
-            0x0E, 0x1F, 0xBA, 0x0E, 0x00, 0xB4, 0x09, 0xCD,
-            0x21, 0xB8, 0x01, 0x4C, 0xCD, 0x21,
-        ]
-    ) + b"This program cannot be run in DOS mode.\r\r\n$\x00"
+    dos_stub = (
+        bytes(
+            [
+                0x0E,
+                0x1F,
+                0xBA,
+                0x0E,
+                0x00,
+                0xB4,
+                0x09,
+                0xCD,
+                0x21,
+                0xB8,
+                0x01,
+                0x4C,
+                0xCD,
+                0x21,
+            ]
+        )
+        + b"This program cannot be run in DOS mode.\r\r\n$\x00"
+    )
     full_dos = bytes(dos) + dos_stub
     # Pad to 0x80
     full_dos = full_dos.ljust(0x80, b"\x00")
@@ -111,9 +136,7 @@ def build_pe() -> bytes:
     text_raw_ptr = HEADER_SIZE
     data_raw_ptr = text_raw_ptr + text_raw_size
     # .bss is NOLOAD — raw_ptr = 0, raw_size = 0
-    size_of_image = (BSS_RVA + BSS_VIRT_SIZE + SECTION_ALIGN - 1) & ~(
-        SECTION_ALIGN - 1
-    )
+    size_of_image = (BSS_RVA + BSS_VIRT_SIZE + SECTION_ALIGN - 1) & ~(SECTION_ALIGN - 1)
 
     opt = struct.pack(
         "<HBBIIIIIIIIIHHHHHHIIIIHHIIIIII",

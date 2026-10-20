@@ -31,16 +31,24 @@ PDATA_RVA = 0x3000
 #   ret
 TEXT_BODY = bytes(
     [
-        0x48, 0x8B, 0x05, 0xF9, 0x0F, 0x00, 0x00,  # mov rax, [rip + 0xFF9]
-        0xB8, 0x2A, 0x00, 0x00, 0x00,              # mov eax, 0x2A
-        0xC3,                                       # ret
+        0x48,
+        0x8B,
+        0x05,
+        0xF9,
+        0x0F,
+        0x00,
+        0x00,  # mov rax, [rip + 0xFF9]
+        0xB8,
+        0x2A,
+        0x00,
+        0x00,
+        0x00,  # mov eax, 0x2A
+        0xC3,  # ret
     ]
 )
 
 # 8 bytes of constant data the load above targets.
-RDATA_BODY = bytes(
-    [0xEF, 0xBE, 0xAD, 0xDE, 0x00, 0x00, 0x00, 0x00]
-)
+RDATA_BODY = bytes([0xEF, 0xBE, 0xAD, 0xDE, 0x00, 0x00, 0x00, 0x00])
 
 # A single RUNTIME_FUNCTION record covering the body of our tiny text
 # routine — (BeginRVA=0x1000, EndRVA=0x100D, UnwindInfoRVA=0x4000).
@@ -55,7 +63,10 @@ def make_section_header(name, virt_size, virt_addr, raw_size, raw_ptr, chars):
         virt_addr,
         raw_size,
         raw_ptr,
-        0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
         chars,
     )
 
@@ -66,8 +77,24 @@ def build_pe() -> bytes:
     dos[0:2] = b"MZ"
     dos[0x3C:0x40] = struct.pack("<I", 0x80)
     dos_stub = (
-        bytes([0x0E, 0x1F, 0xBA, 0x0E, 0x00, 0xB4, 0x09, 0xCD,
-               0x21, 0xB8, 0x01, 0x4C, 0xCD, 0x21])
+        bytes(
+            [
+                0x0E,
+                0x1F,
+                0xBA,
+                0x0E,
+                0x00,
+                0xB4,
+                0x09,
+                0xCD,
+                0x21,
+                0xB8,
+                0x01,
+                0x4C,
+                0xCD,
+                0x21,
+            ]
+        )
         + b"This program cannot be run in DOS mode.\r\r\n$\x00"
     )
     full_dos = (bytes(dos) + dos_stub).ljust(0x80, b"\x00")
@@ -81,9 +108,9 @@ def build_pe() -> bytes:
     num_sections = 3
     coff = struct.pack(
         "<HHIIIHH",
-        0x8664,                       # Machine = x86_64
+        0x8664,  # Machine = x86_64
         num_sections,
-        0x12345678,                   # TimeDateStamp
+        0x12345678,  # TimeDateStamp
         0,
         0,
         size_of_optional_header,
@@ -103,30 +130,39 @@ def build_pe() -> bytes:
     # PE32+ optional header (note: BaseOfData is omitted, ImageBase is QWORD,
     # SizeOfStack/Heap fields are QWORDs).
     opt = struct.pack(
-        "<HBBIIIII"        # Magic..BaseOfCode
-        "Q"                # ImageBase
-        "II"               # SectionAlignment, FileAlignment
-        "HHHHHHI"          # versions + Win32VersionValue
-        "IIII"             # SizeOfImage, Headers, CheckSum, Subsystem/DllChars combined
-        "QQQQ"             # Stack/Heap reserve/commit
-        "II",              # LoaderFlags + NumberOfRvaAndSizes
-        0x020B,             # Magic = PE32+
-        14, 0,              # MajorLinkerVersion (MSVC 14)
+        "<HBBIIIII"  # Magic..BaseOfCode
+        "Q"  # ImageBase
+        "II"  # SectionAlignment, FileAlignment
+        "HHHHHHI"  # versions + Win32VersionValue
+        "IIII"  # SizeOfImage, Headers, CheckSum, Subsystem/DllChars combined
+        "QQQQ"  # Stack/Heap reserve/commit
+        "II",  # LoaderFlags + NumberOfRvaAndSizes
+        0x020B,  # Magic = PE32+
+        14,
+        0,  # MajorLinkerVersion (MSVC 14)
         text_raw_size,
         0,
         0,
         TEXT_RVA,
-        TEXT_RVA,           # BaseOfCode
+        TEXT_RVA,  # BaseOfCode
         IMAGE_BASE,
         SECTION_ALIGN,
         FILE_ALIGN,
-        6, 0, 0, 0, 6, 0,
+        6,
+        0,
+        0,
+        0,
+        6,
+        0,
         0,
         size_of_image,
         HEADER_SIZE,
         0,
-        (3) | (0 << 16),    # Subsystem (CUI) lo, DllCharacteristics hi
-        0x100000, 0x1000, 0x100000, 0x1000,
+        (3) | (0 << 16),  # Subsystem (CUI) lo, DllCharacteristics hi
+        0x100000,
+        0x1000,
+        0x100000,
+        0x1000,
         0,
         16,
     )
@@ -158,9 +194,7 @@ def build_pe() -> bytes:
         0x40000040,
     )
 
-    buf = bytearray(
-        full_dos + pe_sig + coff + opt + sec_text + sec_rdata + sec_pdata
-    )
+    buf = bytearray(full_dos + pe_sig + coff + opt + sec_text + sec_rdata + sec_pdata)
     buf = buf.ljust(HEADER_SIZE, b"\x00")
     buf += TEXT_BODY
     buf = buf.ljust(text_raw_ptr + text_raw_size, b"\x00")

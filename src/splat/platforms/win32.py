@@ -194,9 +194,9 @@ class COFFSymbol:
     typically empty on Windows 7+ era binaries."""
 
     name: str
-    value: int        # VA or RVA depending on storage class
+    value: int  # VA or RVA depending on storage class
     section_number: int  # 1-based, 0 = undefined, -1 = absolute, -2 = debug
-    sym_type: int     # combined base + complex type
+    sym_type: int  # combined base + complex type
     storage_class: int
     aux_records: int  # number of trailing IMAGE_AUX_SYMBOL entries
 
@@ -829,9 +829,15 @@ def parse_imports(data: bytes, pe: PEInfo) -> None:
             continue
 
         _walk_thunk_array(
-            data, pe, thunk_off, iat_rva,
-            thunk_size, thunk_fmt, ordinal_flag,
-            dll_name, pe.imports,
+            data,
+            pe,
+            thunk_off,
+            iat_rva,
+            thunk_size,
+            thunk_fmt,
+            ordinal_flag,
+            dll_name,
+            pe.imports,
         )
 
 
@@ -873,7 +879,7 @@ def parse_delay_imports(data: bytes, pe: PEInfo) -> None:
         desc_off += 32
 
         # Translate fields (RVAs for v2, VAs for v1).
-        def to_rva(field: int) -> int:
+        def to_rva(field: int, attrs: int = attrs) -> int:
             if attrs & 1:
                 return field
             return field - pe.image_base if field >= pe.image_base else field
@@ -890,9 +896,15 @@ def parse_delay_imports(data: bytes, pe: PEInfo) -> None:
             continue
 
         _walk_thunk_array(
-            data, pe, int_off, iat_rva,
-            thunk_size, thunk_fmt, ordinal_flag,
-            dll_name, pe.delay_imports,
+            data,
+            pe,
+            int_off,
+            iat_rva,
+            thunk_size,
+            thunk_fmt,
+            ordinal_flag,
+            dll_name,
+            pe.delay_imports,
         )
 
 
@@ -922,9 +934,7 @@ def parse_bound_imports(data: bytes, pe: PEInfo) -> None:
         if ts == 0 and name_off == 0 and n_fwd == 0:
             break
         name_abs = bi_off + name_off
-        dll_name = (
-            _read_cstr(data, name_abs) if name_abs < len(data) else "?"
-        )
+        dll_name = _read_cstr(data, name_abs) if name_abs < len(data) else "?"
         cur += 8
         fwds: List[str] = []
         # Per spec, NumberOfModuleForwarderRefs fits in a WORD — bound by
@@ -1343,23 +1353,23 @@ def _walk_versioninfo_node(blob: bytes, off: int, out: dict, base_off: int) -> i
     body_off = _align4(body_off - base_off) + base_off
 
     value_end = body_off
-    if w_value_length > 0 and body_off + (w_value_length * (2 if w_type == 1 else 1)) <= node_end:
+    if (
+        w_value_length > 0
+        and body_off + (w_value_length * (2 if w_type == 1 else 1)) <= node_end
+    ):
         if w_type == 1:  # text — value is UTF-16
             value = blob[body_off : body_off + w_value_length * 2]
             # Strip trailing NUL WCHAR(s) without splitting on misaligned
             # zero pairs.
             chars = [
-                value[i : i + 2]
-                for i in range(0, len(value) - (len(value) & 1), 2)
+                value[i : i + 2] for i in range(0, len(value) - (len(value) & 1), 2)
             ]
             text_chars = []
             for wch in chars:
                 if wch == b"\x00\x00":
                     break
                 text_chars.append(wch)
-            value_text = b"".join(text_chars).decode(
-                "utf-16-le", errors="replace"
-            )
+            value_text = b"".join(text_chars).decode("utf-16-le", errors="replace")
             if key not in {"VS_VERSION_INFO", "StringFileInfo", "VarFileInfo"}:
                 out[key] = value_text
             value_end = body_off + w_value_length * 2
@@ -1371,9 +1381,7 @@ def _walk_versioninfo_node(blob: bytes, off: int, out: dict, base_off: int) -> i
                 pairs = []
                 pair_off = body_off
                 while pair_off + 4 <= node_end:
-                    langid, codepage = struct.unpack_from(
-                        "<HH", blob, pair_off
-                    )
+                    langid, codepage = struct.unpack_from("<HH", blob, pair_off)
                     pairs.append((langid, codepage))
                     pair_off += 4
                     if pair_off - body_off >= w_value_length:
@@ -1551,9 +1559,6 @@ def parse_coff_symtab(data: bytes, pe: PEInfo) -> None:
     if end > len(data):
         return
     str_table_off = end
-    str_table_size = 0
-    if str_table_off + 4 <= len(data):
-        str_table_size = struct.unpack_from("<I", data, str_table_off)[0]
 
     def _read_name(record_off: int) -> str:
         name_bytes = data[record_off : record_off + 8]
@@ -1608,8 +1613,9 @@ def parse_version_info(data: bytes, pe: PEInfo) -> None:
         blob = data[f_off : f_off + r.size]
         try:
             _walk_versioninfo_node(blob, 0, pe.version_info, 0)
-        except Exception:
-            # Malformed VERSIONINFO; leave whatever we already extracted.
+        except Exception as exc:
+            # Malformed VERSIONINFO; keep whatever was already extracted.
+            log.write(f"warning: could not parse VERSIONINFO resource: {exc}")
             continue
 
 

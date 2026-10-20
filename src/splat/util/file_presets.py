@@ -252,9 +252,9 @@ def write_assembly_inc_files():
             '"\\label"\\().NON_MATCHING', '"\\label\\().NON_MATCHING"'
         )
     elif options.opts.platform == "win32":
-        # win32 / x86 doesn't share the MIPS macro conventions; emit the
-        # base macros_inc so generated .s files have something to include.
-        gas = macros_inc
+        # The win32 segtypes emit asm directly with `.section ... , "<flags>"`
+        # headers and don't rely on the macros.inc / labels.inc helpers.
+        gas = ""
     elif not options.opts.is_unsupported_platform:
         log.error(f"Unknown platform '{options.opts.platform}'")
     else:

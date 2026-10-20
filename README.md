@@ -4,7 +4,7 @@
 
 A binary splitting tool to assist with decompilation and modding projects
 
-Currently, N64, PSX, PS2, PSP and Win32 PE (x86 / x86_64) binaries are supported. More platforms may come in the future.
+Currently N64, PSX, PS2, PSP and Win32 PE (x86 / x86_64) binaries are supported. More platforms may come in the future.
 
 Please check out the [wiki](https://github.com/ethteck/splat/wiki) for more information including [examples](https://github.com/ethteck/splat/wiki/Examples) of projects that use splat.
 
@@ -21,7 +21,7 @@ The brackets corresponds to the optional dependencies to install while installin
 If you use a `requirements.txt` file in your repository, then you can add this library with the following line:
 
 ```txt
-splat64[mips]>=0.40.0,<1.0.0
+splat64[mips]>=0.50.0,<1.0.0
 ```
 
 ### Optional dependencies
@@ -36,4 +36,14 @@ For Gamecube / Wii projects, see [decomp-toolkit](https://github.com/encounter/d
 
 ### Win32 PE support
 
-The `win32` platform handles PE32 (x86) and PE32+ (x86_64) binaries built by MSVC 4.x-14.x, MinGW (libgcc-linked), and Clang-LLD. Decoded directories include exports, imports, delay imports, bound imports, resources, exception/SEH tables (with unwind-info opcode lists), TLS, /GS + /SAFESEH + /guard:cf load-config, base relocations, debug (CodeView PDB GUID/age extraction), the CLR runtime header (.NET assemblies), and the deprecated COFF symbol table. `python -m splat split <yaml>` produces GAS-clean assembly; `python -m splat.scripts.create_config <binary>` auto-generates a YAML + symbol_addrs.txt; and `python -m splat.scripts.win32_reassemble <yaml>` reconstructs the PE (byte-identical when `exact_encoding: true` is set on text + data subsegments).
+The `win32` platform handles PE32 (x86) and PE32+ (x86_64) binaries built by MSVC 4.x-14.x, MinGW (libgcc-linked), and Clang-LLD. Decoded directories include exports, imports, delay imports, bound imports, resources, exception/SEH tables (with unwind-info opcode lists), TLS, /GS + /SAFESEH + /guard:cf load-config, base relocations, debug (CodeView PDB GUID/age extraction), the CLR runtime header (.NET assemblies), and the deprecated COFF symbol table.
+
+Workflow:
+
+```bash
+python -m splat.scripts.create_config my.exe       # auto-generate YAML + symbol_addrs.txt
+python -m splat split my.exe.yaml                  # produce GAS-clean .s + linker script
+python -m splat.scripts.win32_reassemble my.exe.yaml  # link bytes back into a PE
+```
+
+With `exact_encoding: true` on the text/data/pdata subsegments the reassembled PE is byte-identical to the original.

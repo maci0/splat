@@ -87,8 +87,10 @@ class Win32App(unittest.TestCase):
             (THIS_DIR / "splat.yaml")
             .read_text(encoding="utf-8")
             .replace("base_path: split", "base_path: split-exact")
-            .replace("[0x200, text, main_text]",
-                     "{ start: 0x200, type: text, name: main_text, exact_encoding: true }")
+            .replace(
+                "[0x200, text, main_text]",
+                "{ start: 0x200, type: text, name: main_text, exact_encoding: true }",
+            )
         )
 
         from src.splat.scripts.split import main as splat_main
@@ -106,7 +108,7 @@ class Win32App(unittest.TestCase):
                 capture_output=True,
             )
             self.assertEqual(r.returncode, 0, r.stderr.decode())
-            orig = (THIS_DIR / "win32_app.exe").read_bytes()[0x200:0x200 + 0x11]
+            orig = (THIS_DIR / "win32_app.exe").read_bytes()[0x200 : 0x200 + 0x11]
             reasm = binf.read_bytes()[: len(orig)]
             self.assertEqual(
                 orig, reasm, "exact_encoding text bytes diverge from original"

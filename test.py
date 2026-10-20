@@ -13,7 +13,7 @@ from typing import List, Tuple
 from src.splat import __version__
 from src.splat.disassembler import disassembler_instance
 from src.splat.scripts.split import main
-from src.splat.util import symbols, options
+from src.splat.util import symbols, options, metadata
 from src.splat.segtypes.common.rodata import CommonSegRodata
 from src.splat.segtypes.common.code import CommonSegCode
 from src.splat.segtypes.common.c import CommonSegC
@@ -25,8 +25,8 @@ from src.splat.segtypes.segment import Segment
 class Testing(unittest.TestCase):
     def compare_files(self, test_path, ref_path):
         with (
-            io.open(test_path, encoding="utf-8") as test_f,
-            io.open(ref_path, encoding="utf-8") as ref_f,
+            open(test_path, encoding="utf-8") as test_f,
+            open(ref_path, encoding="utf-8") as ref_f,
         ):
             self.assertListEqual(list(test_f), list(ref_f))
 
@@ -74,6 +74,7 @@ class Testing(unittest.TestCase):
         gen_spec = importlib.util.spec_from_file_location(
             "_win32_gen64_cfg", fixture_dir / "generate.py"
         )
+        assert gen_spec is not None and gen_spec.loader is not None
         gen = importlib.util.module_from_spec(gen_spec)
         gen_spec.loader.exec_module(gen)
         gen.main()
@@ -116,6 +117,7 @@ class Testing(unittest.TestCase):
         gen_spec = importlib.util.spec_from_file_location(
             "_win32_generate2", fixture_dir / "generate.py"
         )
+        assert gen_spec is not None and gen_spec.loader is not None
         gen = importlib.util.module_from_spec(gen_spec)
         gen_spec.loader.exec_module(gen)
         gen.main()
@@ -146,6 +148,7 @@ class Testing(unittest.TestCase):
         self.assertIn("entrypoint", sym_text)
         # Provenance preamble: source filename + truncated sha1.
         import hashlib
+
         expected_sha1 = hashlib.sha1(exe_bytes).hexdigest()[:12]
         self.assertIn(exe_path.name, sym_text)
         self.assertIn(expected_sha1, sym_text)
@@ -164,6 +167,7 @@ class Testing(unittest.TestCase):
         gen_spec = importlib.util.spec_from_file_location(
             "_win32_generate64", fixture_dir / "generate.py"
         )
+        assert gen_spec is not None and gen_spec.loader is not None
         gen = importlib.util.module_from_spec(gen_spec)
         gen_spec.loader.exec_module(gen)
         gen.main()
@@ -228,6 +232,7 @@ class Testing(unittest.TestCase):
         gen_spec = importlib.util.spec_from_file_location(
             "_win32_generate", fixture_dir / "generate.py"
         )
+        assert gen_spec is not None and gen_spec.loader is not None
         gen = importlib.util.module_from_spec(gen_spec)
         gen_spec.loader.exec_module(gen)
         gen.main()
@@ -241,9 +246,7 @@ class Testing(unittest.TestCase):
         splat_main([fixture_dir / "splat.yaml"], None, False)
 
         for name in ("asm/header.s", "asm/main_text.s", "win32_app.ld"):
-            self.assertTrue(
-                (split_dir / name).exists(), f"win32 split missing {name}"
-            )
+            self.assertTrue((split_dir / name).exists(), f"win32 split missing {name}")
 
         text = (split_dir / "asm/main_text.s").read_text(encoding="utf-8")
         for needle in ("push ebp", "mov ebp, esp", "mov eax, 0x2a", "ret"):
@@ -269,6 +272,7 @@ class Testing(unittest.TestCase):
         gen_spec = importlib.util.spec_from_file_location(
             "_win32_exact_gen", fixture_dir / "generate.py"
         )
+        assert gen_spec is not None and gen_spec.loader is not None
         gen = importlib.util.module_from_spec(gen_spec)
         gen_spec.loader.exec_module(gen)
         gen.main()
@@ -309,7 +313,7 @@ class Testing(unittest.TestCase):
                 orig,
                 reasm,
                 f"exact_encoding text bytes diverge from original "
-                f"({sum(1 for a,b in zip(orig, reasm) if a != b)} mismatches)",
+                f"({sum(1 for a, b in zip(orig, reasm) if a != b)} mismatches)",
             )
         finally:
             for p in (obj, binf, exact_yaml):
@@ -325,7 +329,6 @@ class Testing(unittest.TestCase):
         delivered by `exact_encoding`; this round-trip catches bin/asm
         wiring breakage that the section-level tests don't see.)"""
         import shutil as _shutil
-        import subprocess as _sub
 
         if any(_shutil.which(t) is None for t in ("as", "ld", "objcopy")):
             self.skipTest("`as` / `ld` / `objcopy` not installed")
@@ -335,6 +338,7 @@ class Testing(unittest.TestCase):
         gen_spec = importlib.util.spec_from_file_location(
             "_win32_reasm_gen", fixture_dir / "generate.py"
         )
+        assert gen_spec is not None and gen_spec.loader is not None
         gen = importlib.util.module_from_spec(gen_spec)
         gen_spec.loader.exec_module(gen)
         gen.main()
@@ -357,8 +361,9 @@ class Testing(unittest.TestCase):
             data = out_path.read_bytes()
             self.assertEqual(data[:2], b"MZ", "reassembly is not an MZ file")
             pe_off = int.from_bytes(data[0x3C:0x40], "little")
-            self.assertEqual(data[pe_off:pe_off + 4], b"PE\x00\x00",
-                             "no PE signature at e_lfanew")
+            self.assertEqual(
+                data[pe_off : pe_off + 4], b"PE\x00\x00", "no PE signature at e_lfanew"
+            )
         finally:
             if out_path.exists():
                 out_path.unlink()
@@ -380,6 +385,7 @@ class Testing(unittest.TestCase):
         gen_spec = importlib.util.spec_from_file_location(
             "_win32_reasm_exact_gen", fixture_dir / "generate.py"
         )
+        assert gen_spec is not None and gen_spec.loader is not None
         gen = importlib.util.module_from_spec(gen_spec)
         gen_spec.loader.exec_module(gen)
         gen.main()
@@ -416,9 +422,10 @@ class Testing(unittest.TestCase):
             orig = (fixture_dir / "win32_app.exe").read_bytes()
             reasm = out_path.read_bytes()
             self.assertEqual(
-                orig, reasm,
+                orig,
+                reasm,
                 f"reassembled PE diverges from original "
-                f"({sum(1 for a,b in zip(orig, reasm) if a != b)} mismatches)",
+                f"({sum(1 for a, b in zip(orig, reasm) if a != b)} mismatches)",
             )
         finally:
             for p in (out_path, exact_yaml):
@@ -442,6 +449,7 @@ class Testing(unittest.TestCase):
         gen_spec = importlib.util.spec_from_file_location(
             "_win32_reasm_exact_gen64", fixture_dir / "generate.py"
         )
+        assert gen_spec is not None and gen_spec.loader is not None
         gen = importlib.util.module_from_spec(gen_spec)
         gen_spec.loader.exec_module(gen)
         gen.main()
@@ -482,9 +490,10 @@ class Testing(unittest.TestCase):
             orig = (fixture_dir / "win32_app64.exe").read_bytes()
             reasm = out_path.read_bytes()
             self.assertEqual(
-                orig, reasm,
+                orig,
+                reasm,
                 f"reassembled PE32+ diverges from original "
-                f"({sum(1 for a,b in zip(orig, reasm) if a != b)} mismatches)",
+                f"({sum(1 for a, b in zip(orig, reasm) if a != b)} mismatches)",
             )
         finally:
             for p in (out_path, exact_yaml):
@@ -509,6 +518,7 @@ class Testing(unittest.TestCase):
         gen_spec = importlib.util.spec_from_file_location(
             "_win32_exact_gen64", fixture_dir / "generate.py"
         )
+        assert gen_spec is not None and gen_spec.loader is not None
         gen = importlib.util.module_from_spec(gen_spec)
         gen_spec.loader.exec_module(gen)
         gen.main()
@@ -536,9 +546,7 @@ class Testing(unittest.TestCase):
         obj = fixture_dir / "main_text.o"
         binf = fixture_dir / "main_text.bin"
         try:
-            r = _sub.run(
-                ["as", "--64", str(asm), "-o", str(obj)], capture_output=True
-            )
+            r = _sub.run(["as", "--64", str(asm), "-o", str(obj)], capture_output=True)
             self.assertEqual(r.returncode, 0, r.stderr.decode())
             r = _sub.run(
                 ["objcopy", "-O", "binary", "-j", ".text", str(obj), str(binf)],
@@ -555,7 +563,7 @@ class Testing(unittest.TestCase):
                 orig,
                 reasm,
                 f"exact_encoding PE32+ text bytes diverge "
-                f"({sum(1 for a,b in zip(orig, reasm) if a != b)} mismatches)",
+                f"({sum(1 for a, b in zip(orig, reasm) if a != b)} mismatches)",
             )
         finally:
             for p in (obj, binf, exact_yaml):
@@ -693,7 +701,7 @@ class Symbols(unittest.TestCase):
         for type in spim_types:
             assert symbols.check_valid_type(type)
 
-    def test_add_symbol_to_spim_segment(self):
+    def test_add_symbol_to_spimdisasm_segment(self):
         segment = spimdisasm.common.SymbolsSegment(
             context=spimdisasm.common.Context(),
             vromStart=0x0,
@@ -706,28 +714,7 @@ class Symbols(unittest.TestCase):
         sym.defined = True
         sym.rom = 0x0
         sym.type = "func"
-        result = symbols.add_symbol_to_spim_segment(segment, sym)
-        assert result.type == spimdisasm.common.SymbolSpecialType.function
-        assert sym.user_declared == result.isUserDeclared
-        assert sym.defined == result.isDefined
-
-    def test_add_symbol_to_spim_section(self):
-        section = spimdisasm.mips.sections.SectionBase(
-            context=spimdisasm.common.Context(),
-            vromStart=0x0,
-            vromEnd=0x10,
-            vram=0x40000000,
-            filename="test",
-            words=[],
-            sectionType=spimdisasm.common.FileSectionType.Text,
-            segmentVromStart=0x0,
-            overlayCategory=None,
-        )
-        sym = symbols.Symbol(0x100)
-        sym.type = "func"
-        sym.user_declared = False
-        sym.defined = True
-        result = symbols.add_symbol_to_spim_section(section, sym)
+        result = symbols.add_symbol_to_spimdisasm_segment(segment, sym)
         assert result.type == spimdisasm.common.SymbolSpecialType.function
         assert sym.user_declared == result.isUserDeclared
         assert sym.defined == result.isDefined
@@ -744,11 +731,21 @@ class Symbols(unittest.TestCase):
             name="MyFunc",
             vram_start=0x40000000,
             args=[],
-            yaml=None,
+            yaml={},
         )
-        context_sym = spimdisasm.common.ContextSymbol(address=0)
+        spimdisasm_segment = spimdisasm.common.SymbolsSegment(
+            spimdisasm.common.Context(),
+            segment.rom_start,
+            segment.rom_end,
+            segment.vram_start or 0x40000000,
+            segment.vram_end or 0x40000100,
+        )
+        context_sym = spimdisasm.common.ContextSymbol(
+            address=0,
+            segment=spimdisasm_segment,
+        )
         result = symbols.create_symbol_from_spim_symbol(
-            segment, context_sym, force_in_segment=False
+            segment, segment, context_sym, force_in_segment=False
         )
         assert result.referenced
         assert result.extract
@@ -762,12 +759,13 @@ def get_yaml():
         "start": 0,
         "vram": 0x400000,
         "subalign": 4,
+        "bss_size": 0x100,
         "subsegments": [[0, "data"], [0x1DC, "c", "main"], [0x1FC, "data"]],
     }
 
 
 class Rodata(unittest.TestCase):
-    def test_disassemble_data(self):
+    def test_disassemble_rodata(self):
         test_init()
         common_seg_rodata = CommonSegRodata(
             rom_start=0x0,
@@ -775,18 +773,20 @@ class Rodata(unittest.TestCase):
             type=".rodata",
             name="MyRodata",
             vram_start=0x400,
-            args=None,
-            yaml=None,
+            args=[],
+            yaml={},
         )
-        rom_data = []
-        for i in range(0x100):
-            rom_data.append(i)
+        metadata.segment_manager.initialize([common_seg_rodata], [])
+        symbols.initialize_spim_context(metadata.segment_manager.manager)
+
+        rom_data = list(range(0x100))
         common_seg_rodata.disassemble_data(bytes(rom_data))
         assert common_seg_rodata.spim_section is not None
         assert common_seg_rodata.spim_section.get_section().words[0] == 0x0010203
-        assert symbols.get_all_symbols()[0].vram_start == 0x400
-        assert symbols.get_all_symbols()[0].segment == common_seg_rodata
-        assert symbols.get_all_symbols()[0].linker_section == ".rodata"
+        sym = symbols.get_all_symbols()[0]
+        assert sym.vram_start == 0x400, f"{sym.vram_start=}"
+        assert sym.segment == common_seg_rodata, f"{sym.segment=}"
+        assert sym.linker_section == ".rodata", f"{sym.linker_section=}"
 
     def test_get_possible_text_subsegment_for_symbol(self):
         context = spimdisasm.common.Context()
@@ -806,7 +806,17 @@ class Rodata(unittest.TestCase):
         )
         rodata_sym.contextSym.forceMigration = True
 
-        context_sym = spimdisasm.common.ContextSymbol(address=0)
+        spimdisasm_segment = spimdisasm.common.SymbolsSegment(
+            context,
+            0x0,
+            0x100,
+            0x400,
+            0x500,
+        )
+        context_sym = spimdisasm.common.ContextSymbol(
+            address=0,
+            segment=spimdisasm_segment,
+        )
         context_sym.address = result_symbol_addr
 
         rodata_sym.contextSym.referenceFunctions = {context_sym}
@@ -819,8 +829,8 @@ class Rodata(unittest.TestCase):
             type=".rodata",
             name="MyRodata",
             vram_start=0x400,
-            args=None,
-            yaml=None,
+            args=[],
+            yaml={},
         )
 
         common_seg_rodata.parent = CommonSegCode(
@@ -845,13 +855,14 @@ class Bss(unittest.TestCase):
         test_init()
 
         bss = CommonSegBss(
-            rom_start=0x0,
-            rom_end=0x100,
+            rom_start=0x200,
+            rom_end=0x200,
             type=".bss",
-            name=None,
-            vram_start=0x40000000,
-            args=None,
-            yaml=None,
+            name="bss seg",
+            vram_start=0x300,
+            args=[],
+            yaml={},
+            bss_size=0x100,
         )
 
         bss.parent = CommonSegCode(
@@ -872,8 +883,8 @@ class Bss(unittest.TestCase):
         assert isinstance(
             bss.spim_section.get_section(), spimdisasm.mips.sections.SectionBss
         )
-        assert bss.spim_section.get_section().bssVramStart == 0x40000000
-        assert bss.spim_section.get_section().bssVramEnd == 0x300
+        assert bss.spim_section.get_section().bssVramStart == 0x300
+        assert bss.spim_section.get_section().bssVramEnd == 0x400
 
 
 class Object(unittest.TestCase):
@@ -888,7 +899,7 @@ class Object(unittest.TestCase):
             type="o",
             name="myobject",
             args=[],
-            yaml=None,
+            yaml={},
         )
         expected = Path("test/basic_app/build/myobject")
         self.assertEqual(expected, o.out_path())
@@ -906,7 +917,7 @@ class Object(unittest.TestCase):
             type="o",
             name="myobject",
             args=[section],
-            yaml=None,
+            yaml={},
         )
         out_path = Path("test/basic_app/build/myobject")
 
@@ -920,7 +931,7 @@ class SymbolsInitialize(unittest.TestCase):
         test_init()
 
         sym_addrs_lines = [
-            "func_1 = 0x100; // type:func size:10 rom:100 segment:test_segment name_end:the_name_end "
+            "func_1 = 0x300; // type:func size:10 rom:0x100 segment:test_segment name_end:the_name_end "
         ]
 
         all_segments = [
@@ -939,7 +950,7 @@ class SymbolsInitialize(unittest.TestCase):
         assert symbols.all_symbols[0].given_name == "func_1"
         assert symbols.all_symbols[0].type == "func"
         assert symbols.all_symbols[0].given_size == 10
-        assert symbols.all_symbols[0].rom == 100
+        assert symbols.all_symbols[0].rom == 0x100
         assert symbols.all_symbols[0].segment == all_segments[0]
         assert symbols.all_symbols[0].given_name_end == "the_name_end"
 
@@ -948,8 +959,7 @@ class SymbolsInitialize(unittest.TestCase):
         test_init()
 
         sym_addrs_lines = [
-            "func_1 = 0x100; // defined:True extract:True force_migration:True force_not_migration:True "
-            "allow_addend:True dont_allow_addend:True"
+            "func_1 = 0x100; // defined:True extract:True force_migration:True force_not_migration:True allow_addend:True dont_allow_addend:True",
         ]
 
         all_segments = [
@@ -1031,7 +1041,9 @@ class InitializeSpimContext(unittest.TestCase):
         # force this since it's hard to set up
         all_segments[0].exclusive_ram_id = "overlay"
 
-        symbols.initialize_spim_context(all_segments)
+        metadata.segment_manager.initialize(all_segments, symbols.all_symbols)
+
+        symbols.initialize_spim_context(metadata.segment_manager.manager)
         # spim should have added something to overlaySegments
         assert (
             type(symbols.spim_context.overlaySegments["overlay"][0x1000])
@@ -1070,9 +1082,11 @@ class InitializeSpimContext(unittest.TestCase):
             )
         ]
 
+        metadata.segment_manager.initialize(all_segments, symbols.all_symbols)
+
         assert symbols.spim_context.globalSegment.vramStart == 0x80000000
         assert symbols.spim_context.globalSegment.vramEnd == 0x80001000
-        symbols.initialize_spim_context(all_segments)
+        symbols.initialize_spim_context(metadata.segment_manager.manager)
         assert symbols.spim_context.globalSegment.vramStart == 0x100
         assert symbols.spim_context.globalSegment.vramEnd == 0x2C0
 

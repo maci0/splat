@@ -14,17 +14,11 @@ from ...util import options
 STRING_MIN_LEN = 4
 
 
-
-
 def _is_string_byte(b: int) -> bool:
     # ASCII control/printable subset OR Latin-1 Supplement printables.
     # Mirrors the wide-string scanner; covers localised ANSI resources
     # written in Western European code pages.
-    return (
-        b == 0x09 or b == 0x0A or b == 0x0D
-        or 0x20 <= b <= 0x7E
-        or 0xA0 <= b <= 0xFF
-    )
+    return b == 0x09 or b == 0x0A or b == 0x0D or 0x20 <= b <= 0x7E or 0xA0 <= b <= 0xFF
 
 
 def _escape_string(raw: bytes) -> str:
@@ -163,6 +157,7 @@ class Win32SegData(CommonSegment):
         standalone `as` assembly (no linker required to resolve labels).
         Inherits from parent code-group YAML if not set per-subsegment."""
         from ...platforms.win32 import resolve_exact_encoding
+
         return resolve_exact_encoding(self.yaml, self.parent)
 
     @staticmethod
@@ -271,33 +266,98 @@ class Win32SegData(CommonSegment):
         # false positives (ASCII 4-char tags etc. happen to look like
         # in-image pointers but never point at a real instruction start).
         prologue_first_bytes = {
-            0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57,  # push r32
-            0x6A, 0x68,                                       # push imm
-            0x80, 0x81, 0x83,                                 # ALU r/m, imm
-            0x8B, 0x89, 0x8A, 0x88,                           # mov r/m, ...
-            0x8C, 0x8E,                                       # mov sreg/r
-            0x8D,                                             # lea
-            0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7,   # mov r8, imm8
-            0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF,   # mov r32, imm32
-            0xC6, 0xC7,                                       # mov r/m, imm
-            0xE8, 0xE9,                                       # call/jmp rel32
-            0xFF,                                             # call/jmp [...]
-            0xC2, 0xC3,                                       # ret (leaf)
-            0xCB, 0xCA,                                       # retf
-            0xCC,                                             # int3
-            0xEB,                                             # short jmp
-            0x33, 0x31,                                       # xor reg, reg
-            0x0F,                                             # two-byte op
-            0x66,                                             # opsize prefix
-            0x64, 0x65,                                       # fs/gs prefix
-            0x67,                                             # addrsize prefix
-            0xF2, 0xF3,                                       # rep / repne prefix
-            0xF6, 0xF7,                                       # test/not/neg r/m
-            0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,   # inc r32 (32-bit) / REX (64-bit)
-            0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F,   # dec r32 (32-bit) / REX.W+ (64-bit)
-            0xA0, 0xA1, 0xA2, 0xA3,                           # mov mov al/eax, [mem]
-            0xD8, 0xD9, 0xDA, 0xDB, 0xDC, 0xDD, 0xDE, 0xDF,   # FPU x87 group
-            0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD,               # clc/stc/cli/sti/cld/std (rare leaf)
+            0x50,
+            0x51,
+            0x52,
+            0x53,
+            0x54,
+            0x55,
+            0x56,
+            0x57,  # push r32
+            0x6A,
+            0x68,  # push imm
+            0x80,
+            0x81,
+            0x83,  # ALU r/m, imm
+            0x8B,
+            0x89,
+            0x8A,
+            0x88,  # mov r/m, ...
+            0x8C,
+            0x8E,  # mov sreg/r
+            0x8D,  # lea
+            0xB0,
+            0xB1,
+            0xB2,
+            0xB3,
+            0xB4,
+            0xB5,
+            0xB6,
+            0xB7,  # mov r8, imm8
+            0xB8,
+            0xB9,
+            0xBA,
+            0xBB,
+            0xBC,
+            0xBD,
+            0xBE,
+            0xBF,  # mov r32, imm32
+            0xC6,
+            0xC7,  # mov r/m, imm
+            0xE8,
+            0xE9,  # call/jmp rel32
+            0xFF,  # call/jmp [...]
+            0xC2,
+            0xC3,  # ret (leaf)
+            0xCB,
+            0xCA,  # retf
+            0xCC,  # int3
+            0xEB,  # short jmp
+            0x33,
+            0x31,  # xor reg, reg
+            0x0F,  # two-byte op
+            0x66,  # opsize prefix
+            0x64,
+            0x65,  # fs/gs prefix
+            0x67,  # addrsize prefix
+            0xF2,
+            0xF3,  # rep / repne prefix
+            0xF6,
+            0xF7,  # test/not/neg r/m
+            0x40,
+            0x41,
+            0x42,
+            0x43,
+            0x44,
+            0x45,
+            0x46,
+            0x47,  # inc r32 (32-bit) / REX (64-bit)
+            0x48,
+            0x49,
+            0x4A,
+            0x4B,
+            0x4C,
+            0x4D,
+            0x4E,
+            0x4F,  # dec r32 (32-bit) / REX.W+ (64-bit)
+            0xA0,
+            0xA1,
+            0xA2,
+            0xA3,  # mov mov al/eax, [mem]
+            0xD8,
+            0xD9,
+            0xDA,
+            0xDB,
+            0xDC,
+            0xDD,
+            0xDE,
+            0xDF,  # FPU x87 group
+            0xF8,
+            0xF9,
+            0xFA,
+            0xFB,
+            0xFC,
+            0xFD,  # clc/stc/cli/sti/cld/std (rare leaf)
         }
         offsets: List[int] = []
         ptr_size, ptr_fmt, _, _ = win32_platform.ptr_layout(pe.is_pe32_plus)
@@ -320,12 +380,11 @@ class Win32SegData(CommonSegment):
         return offsets
 
     def _resolve_pointer(self, va: int) -> Optional[str]:
-        from ...util import symbols as symbols_mod
         from ...platforms import win32 as win32_platform
 
-        entries = symbols_mod.all_symbols_dict.get(va)
-        if entries:
-            return entries[0].name
+        sym = self.get_symbol(va)
+        if sym is not None:
+            return sym.name
 
         # No declared symbol — synthesise one based on which section the
         # pointer lands in. Matches the labels Win32SegText auto-emits at
@@ -382,9 +441,7 @@ class Win32SegData(CommonSegment):
             if self.DETECT_STRINGS and not exact:
                 end = _scan_string(data, i)
                 # Reject the string if it would straddle a pointer slot.
-                if end is not None and not any(
-                    i <= p < end for p in ptr_set
-                ):
+                if end is not None and not any(i <= p < end for p in ptr_set):
                     flush_chunk(i)
                     text = _escape_string(data[i : end - 1])
                     lines.append(f'    .asciz "{text}"')
@@ -393,9 +450,7 @@ class Win32SegData(CommonSegment):
                     continue
                 # UTF-16LE wide string (e.g. Windows API L"..." literals).
                 w_end = _scan_wide_string(data, i)
-                if w_end is not None and not any(
-                    i <= p < w_end for p in ptr_set
-                ):
+                if w_end is not None and not any(i <= p < w_end for p in ptr_set):
                     flush_chunk(i)
                     body = data[i : w_end - 2]
                     text = _decode_wide(body)

@@ -64,15 +64,13 @@ PSYQ = Compiler(
 MWCCPS2 = Compiler("MWCCPS2", uses_include_asm=False)
 EEGCC = Compiler("EEGCC", align_on_branch_labels=True)
 
-# Win32 / MSVC 6.0 (cl.exe 12.00). Emits MASM-style asm; `PROC`/`ENDP` are the
-# function delimiters, but for splat purposes we keep GAS-style labels so the
-# generated `.s` files can be reassembled with a portable toolchain.
+
+# Win32 / PE — every MSVC linker emits MASM-style asm; for splat
+# purposes they all share the same config (.globl for symbols, no
+# end-label, no INCLUDE_ASM). Distinct version tags keep generated
+# configs documenting which MSVC produced the binary so future
+# refactors can specialise per-version if needed.
 def _msvc_compiler(name: str) -> Compiler:
-    """Family-template for MSVC linker versions. Every MSVC linker emits
-    MASM-style asm; for splat-purposes they all share the same config —
-    `.globl` for symbols, no end-label, no INCLUDE_ASM. Distinct names
-    keep round-trip metadata so generated configs document which MSVC
-    produced the binary."""
     return Compiler(
         name,
         asm_function_macro=".globl",
@@ -87,13 +85,8 @@ def _msvc_compiler(name: str) -> Compiler:
     )
 
 
-# GCC-Mingw and Clang-LLD both produce PE binaries that follow the
-# same MASM-style assembly conventions as MSVC for splat-emit purposes,
-# but get distinct compiler tags so generated configs document the
-# actual toolchain that built the binary.
 MINGW = _msvc_compiler("MINGW")
 CLANG_LLD = _msvc_compiler("CLANG_LLD")
-
 MSVC2 = _msvc_compiler("MSVC2")
 MSVC4 = _msvc_compiler("MSVC4")
 MSVC5 = _msvc_compiler("MSVC5")

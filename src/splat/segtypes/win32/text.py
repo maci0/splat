@@ -8,6 +8,7 @@ from typing import Dict, Optional, Set
 from ..common.segment import CommonSegment
 from ...util import log, options
 from ...util.symbols import Symbol
+from ...util.metadata.segment_manager import manager
 
 
 _HEX_RE = re.compile(r"\b0x([0-9a-fA-F]+)\b")
@@ -56,22 +57,42 @@ _NO_INDEX_LONE_RE = re.compile(r"\[\s*[re]iz\*\d+\s*\]")
 # capstone often labels as `xmmword ptr`. GAS wants `qword ptr` (or no
 # qualifier).
 _SCALAR_SSE_DOUBLE = {
-    "comisd", "ucomisd", "addsd", "subsd", "mulsd", "divsd",
-    "minsd", "maxsd", "sqrtsd", "cvtsi2sd", "cvtsd2si", "cvttsd2si",
-    "cvtsd2ss", "movsd",
+    "comisd",
+    "ucomisd",
+    "addsd",
+    "subsd",
+    "mulsd",
+    "divsd",
+    "minsd",
+    "maxsd",
+    "sqrtsd",
+    "cvtsi2sd",
+    "cvtsd2si",
+    "cvttsd2si",
+    "cvtsd2ss",
+    "movsd",
 }
 # SSE scalar single — 4-byte source.
 _SCALAR_SSE_SINGLE = {
-    "comiss", "ucomiss", "addss", "subss", "mulss", "divss",
-    "minss", "maxss", "sqrtss", "cvtsi2ss", "cvtss2si", "cvttss2si",
-    "cvtss2sd", "movss",
+    "comiss",
+    "ucomiss",
+    "addss",
+    "subss",
+    "mulss",
+    "divss",
+    "minss",
+    "maxss",
+    "sqrtss",
+    "cvtsi2ss",
+    "cvtss2si",
+    "cvttss2si",
+    "cvtss2sd",
+    "movss",
 }
 # Matches `[rip + 0xN]` / `[rip - 0xN]` / `[rip]` (the last when disp == 0
 # — capstone elides the literal). Needed for PE32+ RIP-relative memory
 # operands, where the absolute target = insn.address + insn.size + disp.
-_RIP_REL_RE = re.compile(
-    r"\[rip(?:\s*(?P<sign>[+-])\s*0x(?P<hex>[0-9a-fA-F]+))?\]"
-)
+_RIP_REL_RE = re.compile(r"\[rip(?:\s*(?P<sign>[+-])\s*0x(?P<hex>[0-9a-fA-F]+))?\]")
 
 
 class Win32SegText(CommonSegment):
@@ -109,6 +130,7 @@ class Win32SegText(CommonSegment):
     @property
     def exact_encoding(self) -> bool:
         from ...platforms.win32 import resolve_exact_encoding
+
         return resolve_exact_encoding(
             self.yaml, self.parent, self.EXACT_ENCODING_DEFAULT
         )
@@ -125,6 +147,20 @@ class Win32SegText(CommonSegment):
 
     def should_split(self) -> bool:
         return self.extract and self.should_scan()
+
+    def _declared_symbols(self) -> Dict[int, Symbol]:
+        """Symbols declared for this segment, keyed by vram.
+
+        Replaces the old Segment.seg_symbols mapping, which splat 0.50.0
+        dropped when segment metadata took over symbol ownership.
+        """
+        most_parent, parent_segment_info = self.get_parent_segment_info()
+        if parent_segment_info is None:
+            return {}
+        seg_meta = most_parent.owned_metadata
+        if seg_meta is None:
+            seg_meta = manager.find_owned_segment(parent_segment_info)
+        return dict(seg_meta.symbols)
 
     def split(self, rom_bytes: bytes):
         if self.rom_start is None or self.rom_end is None:
@@ -181,9 +217,9 @@ class Win32SegText(CommonSegment):
         # Build a quick lookup of any user-declared symbols that fall inside
         # this segment so they show up as labels in the disassembly.
         seg_symbols: Dict[int, Optional[Symbol]] = {}
-        for vram_addr, syms in self.seg_symbols.items():
+        for vram_addr, sym in self._declared_symbols().items():
             if self.vram_start <= vram_addr < (self.vram_start + len(data)):
-                seg_symbols[vram_addr] = syms[0]
+                seg_symbols[vram_addr] = sym
         # Also synthesize a label for the platform-level entry point if it
         # lands inside this segment.
         from ...platforms import win32 as win32_platform
@@ -286,7 +322,6 @@ class Win32SegText(CommonSegment):
         # Build a global-symbol lookup so we can annotate memory operands
         # that reach known data (IAT slots, exports, etc.) with a trailing
         # comment.
-        from ...util import symbols as symbols_mod
         from .data import _is_string_byte, _escape_string
 
         pe = win32_platform.info
@@ -296,9 +331,7 @@ class Win32SegText(CommonSegment):
         # call_target so they can be renamed `<imp_name>_thunk` (or
         # `<imp_name>_thunk_<va>` if the same import has multiple thunks).
         # Map every IAT slot's VA (eager + delayed) to its canonical label.
-        iat_to_label: Dict[int, str] = dict(
-            win32_platform.compute_iat_labels(pe)
-        )
+        iat_to_label: Dict[int, str] = dict(win32_platform.compute_iat_labels(pe))
 
         # Pre-populate `synth_labels` with export and import names so DLLs
         # surface readable references (`call dword ptr [imp_..._CreateThread]`,
@@ -392,9 +425,9 @@ class Win32SegText(CommonSegment):
         def resolve_sym(addr: int) -> Optional[str]:
             if addr in thunk_labels:
                 return thunk_labels[addr]
-            entries = symbols_mod.all_symbols_dict.get(addr)
-            if entries:
-                return entries[0].name
+            sym = self.get_symbol(addr)
+            if sym is not None:
+                return sym.name
             if addr in synth_labels:
                 return synth_labels[addr]
             if addr == entry_va:
@@ -451,8 +484,7 @@ class Win32SegText(CommonSegment):
             image_max = pe.image_base + pe.size_of_image
 
             is_branch = bool(
-                insn.group(capstone.CS_GRP_CALL)
-                or insn.group(capstone.CS_GRP_JUMP)
+                insn.group(capstone.CS_GRP_CALL) or insn.group(capstone.CS_GRP_JUMP)
             )
 
             # `mov reg, imm` / `mov [mem], imm` / `push imm` need `offset`
@@ -522,11 +554,7 @@ class Win32SegText(CommonSegment):
                     seen.add(imm)
                 elif op.type == capstone.CS_OP_MEM:
                     # Absolute (32-bit) memory operand.
-                    if (
-                        op.mem.base == 0
-                        and op.mem.index == 0
-                        and op.mem.segment == 0
-                    ):
+                    if op.mem.base == 0 and op.mem.index == 0 and op.mem.segment == 0:
                         addr = op.mem.disp & _addr_mask
                         if addr in seen:
                             continue
@@ -548,7 +576,9 @@ class Win32SegText(CommonSegment):
                             and op.mem.index == 0
                             and op.mem.segment == 0
                         ):
-                            target = (insn.address + insn.size + op.mem.disp) & 0xFFFFFFFFFFFFFFFF
+                            target = (
+                                insn.address + insn.size + op.mem.disp
+                            ) & 0xFFFFFFFFFFFFFFFF
                             if target in seen:
                                 continue
                             text = peek_string(target)
@@ -574,9 +604,7 @@ class Win32SegText(CommonSegment):
                 return f"func_{addr:08X}"
             return f"loc_{addr:08X}"
 
-        labelled: Set[int] = (
-            set(seg_symbols) | call_targets | jump_targets
-        )
+        labelled: Set[int] = set(seg_symbols) | call_targets | jump_targets
 
         exact = self.exact_encoding
 
@@ -588,7 +616,7 @@ class Win32SegText(CommonSegment):
             if not exact:
                 # `.intel_syntax noprefix` only matters when we emit
                 # actual mnemonics; exact-encoding mode emits raw bytes.
-                f.write(f".intel_syntax noprefix\n")
+                f.write(".intel_syntax noprefix\n")
             f.write(f".global {self.name}\n")
             f.write(f"{self.name}:\n")
 
@@ -661,7 +689,7 @@ class Win32SegText(CommonSegment):
                     if run >= 2:
                         kind = "int3" if pad == 0xCC else "nop"
                         f.write(
-                            f"    .byte "
+                            "    .byte "
                             + ", ".join([f"0x{pad:02X}"] * run)
                             + f"  /* 0x{vram + offset:08X} ({run}× {kind} padding) */\n"
                         )
@@ -779,24 +807,19 @@ class Win32SegText(CommonSegment):
         # Lists every function-style label and its byte length so callers can
         # navigate the huge text dump without grepping it.
         func_starts = sorted(
-            set(call_targets) | set(seg_symbols.keys()) | ({entry_va} if vram <= entry_va < seg_end else set())
+            set(call_targets)
+            | set(seg_symbols.keys())
+            | ({entry_va} if vram <= entry_va < seg_end else set())
         )
         end_marker = vram + decode_len
         addr_width = 16 if pe.is_pe32_plus else 8
 
         # Pre-compute kind-source sets so the per-entry lookup is O(1).
-        _export_vas = {
-            pe.image_base + e.rva
-            for e in pe.exports
-            if e.forwarder is None
-        }
+        _export_vas = {pe.image_base + e.rva for e in pe.exports if e.forwarder is None}
         _tls_vas = set(pe.tls_callback_vas)
         _seh_vas = {pe.image_base + rva for rva in pe.safe_seh_handlers}
         _cfg_vas = {pe.image_base + rva for rva in pe.cfg_function_rvas}
-        _rt_vas = {
-            pe.image_base + begin
-            for begin, _e, _u in pe.runtime_functions
-        }
+        _rt_vas = {pe.image_base + begin for begin, _e, _u in pe.runtime_functions}
 
         def kind_for(addr: int) -> str:
             if addr in thunk_labels:
@@ -820,11 +843,11 @@ class Win32SegText(CommonSegment):
         idx_path = out_path.with_suffix(".functions.txt")
         with idx_path.open("w", encoding="utf-8", newline="\n") as idx:
             idx.write(f"# segment: {self.name}\n")
-            idx.write(
-                "# columns: VA(hex)  size(decimal bytes)  kind  label\n"
-            )
+            idx.write("# columns: VA(hex)  size(decimal bytes)  kind  label\n")
             for i, addr in enumerate(func_starts):
-                next_addr = func_starts[i + 1] if i + 1 < len(func_starts) else end_marker
+                next_addr = (
+                    func_starts[i + 1] if i + 1 < len(func_starts) else end_marker
+                )
                 size = next_addr - addr
                 idx.write(
                     f"0x{addr:0{addr_width}X}  {size:>8d}  {kind_for(addr):<6s}  {label_for(addr)}\n"
