@@ -81,3 +81,4 @@ jobs:
           ${{ matrix.os.python_venv_activate }}
           python3 test.py
           python3 test_n64_entrypoints.py
+          python3 test_win32_pe.py

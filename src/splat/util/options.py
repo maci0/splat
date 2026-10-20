@@ -421,7 +421,7 @@ def _parse_yaml(
             "endianness",
             str,
             ["big", "little"],
-            "little" if platform in ["psx", "ps2", "psp"] else "big",
+            "little" if platform in ["psx", "ps2", "psp", "win32"] else "big",
         )
 
         if endianness == "big":
@@ -451,7 +451,7 @@ def _parse_yaml(
         default_ld_bss_is_noload = False
 
     default_add_set_gp_64 = True
-    if platform in ("psx", "ps2"):
+    if platform in ("psx", "ps2", "win32"):
         default_add_set_gp_64 = False
 
     ret = SplatOpts(

@@ -3062,6 +3062,26 @@ class Win32SegBssTest(unittest.TestCase):
         self.assertEqual(obj.reserved_size, 0)
 
 
+class Win32OptionsTest(unittest.TestCase):
+    def test_platform_defaults(self):
+        from pathlib import Path
+        from src.splat.util import options
+
+        opts = options._parse_yaml(
+            {
+                "basename": "app",
+                "base_path": ".",
+                "target_path": "app.exe",
+                "platform": "win32",
+            },
+            [Path("splat.yaml")],
+            [],
+        )
+        self.assertEqual(opts.endianness, "little")
+        self.assertFalse(opts.add_set_gp_64)
+        self.assertEqual(opts.auto_link_sections, [])
+
+
 class ResolveExactEncodingTest(unittest.TestCase):
     """Direct tests for the shared helper, complementing the segtype-
     level inheritance test."""

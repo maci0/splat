@@ -101,11 +101,16 @@ class Win32App(unittest.TestCase):
         obj = THIS_DIR / "main_text.o"
         binf = THIS_DIR / "main_text.bin"
         try:
-            r = _sub.run(["as", "--32", str(asm), "-o", str(obj)], capture_output=True)
+            r = _sub.run(
+                ["as", "--32", str(asm), "-o", str(obj)],
+                capture_output=True,
+                check=False,
+            )
             self.assertEqual(r.returncode, 0, r.stderr.decode())
             r = _sub.run(
                 ["objcopy", "-O", "binary", "-j", ".text", str(obj), str(binf)],
                 capture_output=True,
+                check=False,
             )
             self.assertEqual(r.returncode, 0, r.stderr.decode())
             orig = (THIS_DIR / "win32_app.exe").read_bytes()[0x200 : 0x200 + 0x11]

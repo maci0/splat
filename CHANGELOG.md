@@ -1,7 +1,9 @@
 # splat Release Notes
 
-### Unreleased
+### 0.51.0
 
+* Load platform and segment modules on demand during package initialization.
+* Preserve little-endian and GP-directive defaults for Win32 configurations.
 * Add support for Win32 PE binaries (x86 PE32 and x86_64 PE32+).
   * New `platform: win32` option backed by a self-contained PE parser
     (every populated data directory + COFF symtab + x64 SEH unwind
@@ -36,9 +38,9 @@
     (PE32+), PuTTY 0.60 (vintage MSVC6), PuTTY 0.70 32-bit (MSVC14
     with `.00cfg` CFG section), PuTTY 0.83 64-bit (MSVC14 PE32+
     with 2410 RUNTIME_FUNCTION entries).
-  * Tests: 199 unit tests covering the PE parser, label generation
+  * Tests covering the PE parser, label generation
     helpers, segtype emission, header rendering, and string
-    detectors; 10 end-to-end tests covering split + reassemble +
+    detectors; end-to-end tests covering split + reassemble +
     GAS-clean assembly on both PE32 and PE32+ synthetic fixtures.
 ### 0.50.1
 

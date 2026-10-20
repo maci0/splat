@@ -3,7 +3,6 @@
 import difflib
 import filecmp
 import importlib.util
-import io
 import shutil
 from pathlib import Path
 import spimdisasm
@@ -215,6 +214,7 @@ class Testing(unittest.TestCase):
         out = _sub.run(
             ["as", mode_flag, str(asm_path), "-o", "/dev/null"],
             capture_output=True,
+            check=False,
         )
         self.assertEqual(
             out.returncode,
@@ -300,11 +300,16 @@ class Testing(unittest.TestCase):
         obj = fixture_dir / "main_text.o"
         binf = fixture_dir / "main_text.bin"
         try:
-            r = _sub.run(["as", "--32", str(asm), "-o", str(obj)], capture_output=True)
+            r = _sub.run(
+                ["as", "--32", str(asm), "-o", str(obj)],
+                capture_output=True,
+                check=False,
+            )
             self.assertEqual(r.returncode, 0, r.stderr.decode())
             r = _sub.run(
                 ["objcopy", "-O", "binary", "-j", ".text", str(obj), str(binf)],
                 capture_output=True,
+                check=False,
             )
             self.assertEqual(r.returncode, 0, r.stderr.decode())
             orig = (fixture_dir / "win32_app.exe").read_bytes()[0x200 : 0x200 + 0x11]
@@ -546,11 +551,16 @@ class Testing(unittest.TestCase):
         obj = fixture_dir / "main_text.o"
         binf = fixture_dir / "main_text.bin"
         try:
-            r = _sub.run(["as", "--64", str(asm), "-o", str(obj)], capture_output=True)
+            r = _sub.run(
+                ["as", "--64", str(asm), "-o", str(obj)],
+                capture_output=True,
+                check=False,
+            )
             self.assertEqual(r.returncode, 0, r.stderr.decode())
             r = _sub.run(
                 ["objcopy", "-O", "binary", "-j", ".text", str(obj), str(binf)],
                 capture_output=True,
+                check=False,
             )
             self.assertEqual(r.returncode, 0, r.stderr.decode())
             # Fixture text section starts at file 0x200; check at least the
